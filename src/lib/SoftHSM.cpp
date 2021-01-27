@@ -6345,23 +6345,23 @@ CK_RV SoftHSM::WrapKeySym
 		case CKM_AES_CBC:
 			algo = SymAlgo::AES;
 			break;
-			
+
 		case CKM_AES_CBC_PAD:
 			blocksize = 16;
 			wrappedlen = RFC5652Pad(keydata, blocksize);
 			algo = SymAlgo::AES;
 			break;
-			
+
 		case CKM_DES3_CBC:
 			algo = SymAlgo::DES3;
 			break;
-			
+
 		case CKM_DES3_CBC_PAD:
 			blocksize = 8;
 			wrappedlen = RFC5652Pad(keydata, blocksize);
 			algo = SymAlgo::DES3;
 			break;
-			
+
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -6391,7 +6391,7 @@ CK_RV SoftHSM::WrapKeySym
 	        case CKM_DES3_CBC_PAD:
 			iv.resize(blocksize);
 			memcpy(&iv[0], pMechanism->pParameter, blocksize);
-			
+
 			if (!cipher->encryptInit(wrappingkey, SymMode::CBC, iv, false))
 			{
 				cipher->recycleKey(wrappingkey);
@@ -6920,7 +6920,7 @@ CK_RV SoftHSM::UnwrapKeySym
 	SymWrap::Type mode = SymWrap::Unknown;
 	size_t bb = 8;
 	size_t blocksize = 0;
-	
+
 	switch(pMechanism->mechanism) {
 #ifdef HAVE_AES_KEY_WRAP
 		case CKM_AES_KEY_WRAP:
@@ -6938,12 +6938,12 @@ CK_RV SoftHSM::UnwrapKeySym
 			algo = SymAlgo::AES;
 			blocksize = 16;
 			break;
-			
+
 	        case CKM_DES3_CBC_PAD:
 			algo = SymAlgo::DES3;
 			blocksize = 8;
 		        break;
-		  
+
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -6966,14 +6966,14 @@ CK_RV SoftHSM::UnwrapKeySym
 	ByteString iv;
 	ByteString decryptedFinal;
 	CK_RV rv = CKR_OK;
-	
+
 	switch(pMechanism->mechanism) {
 
 	case CKM_AES_CBC_PAD:
 	case CKM_DES3_CBC_PAD:
 		iv.resize(blocksize);
 		memcpy(&iv[0], pMechanism->pParameter, blocksize);
-			
+
 		if (!cipher->decryptInit(unwrappingkey, SymMode::CBC, iv, false))
 		{
 			cipher->recycleKey(unwrappingkey);
@@ -7002,7 +7002,7 @@ CK_RV SoftHSM::UnwrapKeySym
 			return CKR_GENERAL_ERROR; // TODO should be another error
 		}
 		break;
-		
+
 	default:
 		// Unwrap the key
 		rv = CKR_OK;
@@ -7293,7 +7293,7 @@ CK_RV SoftHSM::C_UnwrapKey
                             pMechanism->ulParameterLen != 8)
 				return CKR_ARGUMENTS_BAD;
 			break;
-			
+
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -7337,7 +7337,7 @@ CK_RV SoftHSM::C_UnwrapKey
 	if (pMechanism->mechanism == CKM_DES3_CBC && (unwrapKey->getUnsignedLongValue(CKA_KEY_TYPE, CKK_VENDOR_DEFINED) != CKK_DES2 ||
 		unwrapKey->getUnsignedLongValue(CKA_KEY_TYPE, CKK_VENDOR_DEFINED) != CKK_DES3))
 		return CKR_WRAPPING_KEY_TYPE_INCONSISTENT;
-	
+
 	// Check if the unwrapping key can be used for unwrapping
 	if (unwrapKey->getBooleanValue(CKA_UNWRAP, false) == false)
 		return CKR_KEY_FUNCTION_NOT_PERMITTED;
@@ -8142,11 +8142,11 @@ CK_RV SoftHSM::generateAES
 	if (rv == CKR_OK)
 	{
 		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
-		if (osobject == NULL_PTR || !osobject->isValid()) 
+		if (osobject == NULL_PTR || !osobject->isValid())
         {
 			rv = CKR_FUNCTION_FAILED;
-		} 
-        else if (osobject->startTransaction()) 
+		}
+        else if (osobject->startTransaction())
         {
 			bool bOK = true;
 
@@ -11134,44 +11134,6 @@ CK_RV SoftHSM::deriveECDH
 		rv = CKR_GENERAL_ERROR;
 	ecdh->recyclePrivateKey(privateKey);
 	ecdh->recyclePublicKey(publicKey);
-
-	// Apply key derivation function (ANSI X9.63)
-	if (rv == CKR_OK && kdfAlgorithm != NULL) {
-		const ByteString& secretBits = secret->getKeyBits();
-		const size_t counterOffset = secretBits.size();
-		unsigned long counter = 1;
-
-		ByteString hashInput;
-		hashInput.resize(secretBits.size() + 4 + ecdhParams->ulSharedDataLen);
-
-		// Prepare hash input content - derived secret, 4 bytes for counter, shared data
-		memcpy(&hashInput[0], secretBits.const_byte_str(), secretBits.size());
-		memcpy(&hashInput[secretBits.size() + 4], ecdhParams->pSharedData, ecdhParams->ulSharedDataLen);
-
-		ByteString hashOutput;
-		ByteString derivedOutput;
-
-		while (derivedOutput.size() < byteLen) {
-			hashInput[counterOffset + 0] = (counter >> 48) & 0xFF;
-			hashInput[counterOffset + 1] = (counter >> 32) & 0xFF;
-			hashInput[counterOffset + 2] = (counter >> 16) & 0xFF;
-			hashInput[counterOffset + 3] = (counter >>  0) & 0xFF;
-
-			kdfAlgorithm->hashInit();
-			kdfAlgorithm->hashUpdate(hashInput);
-			kdfAlgorithm->hashFinal(hashOutput);
-
-			derivedOutput += hashOutput;
-			counter++;
-		}
-
-		// Trim to desired length
-		derivedOutput.resize(byteLen);
-
-		secret->setBitLen(byteLen * 8);
-		if (!secret->setKeyBits(derivedOutput))
-			rv = CKR_FUNCTION_FAILED;
-	}
 
 	// Apply key derivation function (ANSI X9.63)
 	if (rv == CKR_OK && kdfAlgorithm != NULL) {
