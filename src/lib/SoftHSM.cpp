@@ -12748,44 +12748,6 @@ CK_RV SoftHSM::deriveECDH
 			rv = CKR_FUNCTION_FAILED;
 	}
 
-	// Apply key derivation function (ANSI X9.63)
-	if (rv == CKR_OK && kdfAlgorithm != NULL) {
-		const ByteString& secretBits = secret->getKeyBits();
-		const size_t counterOffset = secretBits.size();
-		unsigned long counter = 1;
-
-		ByteString hashInput;
-		hashInput.resize(secretBits.size() + 4 + ecdhParams->ulSharedDataLen);
-
-		// Prepare hash input content - derived secret, 4 bytes for counter, shared data
-		memcpy(&hashInput[0], secretBits.const_byte_str(), secretBits.size());
-		memcpy(&hashInput[secretBits.size() + 4], ecdhParams->pSharedData, ecdhParams->ulSharedDataLen);
-
-		ByteString hashOutput;
-		ByteString derivedOutput;
-
-		while (derivedOutput.size() < byteLen) {
-			hashInput[counterOffset + 0] = (counter >> 48) & 0xFF;
-			hashInput[counterOffset + 1] = (counter >> 32) & 0xFF;
-			hashInput[counterOffset + 2] = (counter >> 16) & 0xFF;
-			hashInput[counterOffset + 3] = (counter >>  0) & 0xFF;
-
-			kdfAlgorithm->hashInit();
-			kdfAlgorithm->hashUpdate(hashInput);
-			kdfAlgorithm->hashFinal(hashOutput);
-
-			derivedOutput += hashOutput;
-			counter++;
-		}
-
-		// Trim to desired length
-		derivedOutput.resize(byteLen);
-
-		secret->setBitLen(byteLen * 8);
-		if (!secret->setKeyBits(derivedOutput))
-			rv = CKR_FUNCTION_FAILED;
-	}
-
 	// Create the secret object using C_CreateObject
 	const CK_ULONG maxAttribs = 32;
 	CK_OBJECT_CLASS objClass = CKO_SECRET_KEY;
