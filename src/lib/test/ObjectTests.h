@@ -67,6 +67,8 @@ class ObjectTests : public TestsBase
 	CPPUNIT_TEST(testTemplateAttribute);
 	CPPUNIT_TEST(testNestedTemplateNullValue);
 	CPPUNIT_TEST(testCreateSecretKey);
+	CPPUNIT_TEST(testDefaultRSAPubAttributesWithDates);
+	CPPUNIT_TEST(testDefaultRSAPrivAttributesWithDates);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -96,6 +98,8 @@ public:
 	void testTemplateAttribute();
 	void testNestedTemplateNullValue();
 	void testCreateSecretKey();
+	void testDefaultRSAPubAttributesWithDates();
+	void testDefaultRSAPrivAttributesWithDates();
 
 protected:
 	void checkCommonObjectAttributes
