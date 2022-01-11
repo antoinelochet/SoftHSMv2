@@ -3984,13 +3984,6 @@ static CK_RV AsymDecrypt(Session* session, CK_BYTE_PTR pEncryptedData, CK_ULONG 
 
 	// Get the data
 	ByteString encryptedData(pEncryptedData, ulEncryptedDataLen);
-
-	int errorCode = 0;
-
-	if (!asymCrypto->checkEncryptedDataSize(privateKey, encryptedData, &errorCode)) {
-		return errorCode;
-	}
-
 	ByteString data;
 
 	// Decrypt the data
