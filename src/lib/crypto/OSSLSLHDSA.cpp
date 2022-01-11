@@ -52,7 +52,6 @@
 /** \brief sign */
 bool OSSLSLHDSA::sign(PrivateKey *privateKey, const ByteString &dataToSign,
                       ByteString &signature, const AsymMech::Type mechanism,
-                      const void * /* param  = NULL*/, const size_t  /* paramLen = 0 */,
                       const MechanismParam* mechanismParam)
 {
 	if (mechanism != AsymMech::SLHDSA)
@@ -194,13 +193,12 @@ bool OSSLSLHDSA::sign(PrivateKey *privateKey, const ByteString &dataToSign,
 
 /** \brief signInit */
 bool OSSLSLHDSA::signInit(PrivateKey* privateKey, const AsymMech::Type mechanism,
-                          const void* param, const size_t paramLen,
                           const MechanismParam* mechanismParam)
 {
 	message.resize(0);
 	mechanismParameters.reset();
 
-	if (!AsymmetricAlgorithm::signInit(privateKey, mechanism, param, paramLen))
+	if (!AsymmetricAlgorithm::signInit(privateKey, mechanism, mechanismParam))
 	{
 		return false;
 	}
@@ -249,7 +247,7 @@ bool OSSLSLHDSA::signUpdate(const ByteString &dataToSign)
 /** \brief signFinal */
 bool OSSLSLHDSA::signFinal(ByteString &signature)
 {
-	int rv = OSSLSLHDSA::sign(currentPrivateKey, message, signature, currentMechanism, NULL, 0, mechanismParameters.get());
+	int rv = OSSLSLHDSA::sign(currentPrivateKey, message, signature, currentMechanism, mechanismParameters.get());
 
 	mechanismParameters.reset();
 
@@ -267,7 +265,6 @@ bool OSSLSLHDSA::signFinal(ByteString &signature)
 /** \brief verify */
 bool OSSLSLHDSA::verify(PublicKey *publicKey, const ByteString &originalData,
                         const ByteString &signature, const AsymMech::Type mechanism,
-                        const void * /* param  = NULL*/, const size_t  /* paramLen = 0 */,
                         const MechanismParam* mechanismParam)
 {
 	if (mechanism != AsymMech::SLHDSA)
@@ -401,13 +398,12 @@ bool OSSLSLHDSA::verify(PublicKey *publicKey, const ByteString &originalData,
 
 /** \brief verifyInit */
 bool OSSLSLHDSA::verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism,
-                            const void* param, const size_t paramLen,
                             const MechanismParam* mechanismParam)
 {
 	message.resize(0);
 	mechanismParameters.reset();
 
-	if (!AsymmetricAlgorithm::verifyInit(publicKey, mechanism, param, paramLen))
+	if (!AsymmetricAlgorithm::verifyInit(publicKey, mechanism, mechanismParam))
 	{
 		return false;
 	}
@@ -456,7 +452,7 @@ bool OSSLSLHDSA::verifyUpdate(const ByteString &originalData)
 /** \brief verifyFinal */
 bool OSSLSLHDSA::verifyFinal(const ByteString &signature)
 {
-	int rv = OSSLSLHDSA::verify(currentPublicKey, message, signature, currentMechanism, NULL, 0, mechanismParameters.get());
+	int rv = OSSLSLHDSA::verify(currentPublicKey, message, signature, currentMechanism, mechanismParameters.get());
 
 	mechanismParameters.reset();
 
@@ -472,8 +468,8 @@ bool OSSLSLHDSA::verifyFinal(const ByteString &signature)
 
 // Encryption functions
 /** \brief encrypt */
-bool OSSLSLHDSA::encrypt(PublicKey * /*publicKey*/, const ByteString & /*data*/,
-                         ByteString & /*encryptedData*/, const AsymMech::Type /*padding*/)
+bool OSSLSLHDSA::encrypt(PublicKey* /* publicKey */, const ByteString& /* data */,
+                               ByteString& /* encryptedData */, const AsymMech::Type /* padding */, const MechanismParam* /* mechanismParam */)
 {
 	ERROR_MSG("SLH-DSA does not support encryption");
 
@@ -482,8 +478,8 @@ bool OSSLSLHDSA::encrypt(PublicKey * /*publicKey*/, const ByteString & /*data*/,
 
 // Decryption functions
 /** \brief decrypt */
-bool OSSLSLHDSA::decrypt(PrivateKey * /*privateKey*/, const ByteString & /*encryptedData*/,
-                         ByteString & /*data*/, const AsymMech::Type /*padding*/)
+bool OSSLSLHDSA::decrypt(PrivateKey* /* privateKey */, const ByteString& /* encryptedData */,
+                               ByteString& /* data */, const AsymMech::Type /* padding */, const MechanismParam* /* mechanismParam */)
 {
 	ERROR_MSG("SLH-DSA does not support decryption");
 
@@ -500,14 +496,6 @@ unsigned long OSSLSLHDSA::getMinKeySize()
 unsigned long OSSLSLHDSA::getMaxKeySize()
 {
 	return SLHDSAParameters::SLH_DSA_SHA2_256F_PUB_LENGTH;
-}
-
-/** \brief checkEncryptedDataSize */
-bool OSSLSLHDSA::checkEncryptedDataSize(PrivateKey * /* privateKey*/, const ByteString & /*encryptedData*/, int * /* errorCode*/)
-{
-	ERROR_MSG("SLH-DSA does not support encryption");
-
-	return false;
 }
 
 // Key factory
