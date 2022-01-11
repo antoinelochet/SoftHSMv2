@@ -227,10 +227,10 @@ void SLHDSATests::testSigningVerifyingHedgePreferred()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	// And verify it
-	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -262,10 +262,10 @@ void SLHDSATests::testSigningVerifyingHedgePreferredWithContext()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	// And verify it
-	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -297,7 +297,7 @@ void SLHDSATests::testSigningVerifyingHedgePreferredWithContextTooLong()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT_EQUAL(false, slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT_EQUAL(false, slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -326,10 +326,10 @@ void SLHDSATests::testSigningVerifyingHedgeRequired()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	// And verify it
-	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -361,10 +361,10 @@ void SLHDSATests::testSigningVerifyingHedgeRequiredWithContext()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	// And verify it
-	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -396,7 +396,7 @@ void SLHDSATests::testSigningVerifyingHedgeRequiredWithContextTooLong()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT(!slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(!slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -425,15 +425,15 @@ void SLHDSATests::testSigningVerifyingDeterministic()
 
 	// Sign the data
 	ByteString sig1;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig1, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig1, AsymMech::SLHDSA, &context));
 
 	// Sign again and assert identical signature
 	ByteString sig2;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig2, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig2, AsymMech::SLHDSA, &context));
 	CPPUNIT_ASSERT(sig1 == sig2);
 
 	// And verify it
-	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig1, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig1, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -465,15 +465,15 @@ void SLHDSATests::testSigningVerifyingDeterministicWithContext()
 
 	// Sign the data
 	ByteString sig1;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig1, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig1, AsymMech::SLHDSA, &context));
 
 	// Sign again and assert identical signature
 	ByteString sig2;
-	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig2, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->sign(kp->getPrivateKey(), dataToSign, sig2, AsymMech::SLHDSA, &context));
 	CPPUNIT_ASSERT(sig1 == sig2);
 
 	// And verify it
-	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig1, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(slhdsa->verify(kp->getPublicKey(), dataToSign, sig1, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);
@@ -505,7 +505,7 @@ void SLHDSATests::testSigningVerifyingDeterministicWithContextTooLong()
 
 	// Sign the data
 	ByteString sig;
-	CPPUNIT_ASSERT(!slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, NULL, 0UL, &context));
+	CPPUNIT_ASSERT(!slhdsa->sign(kp->getPrivateKey(), dataToSign, sig, AsymMech::SLHDSA, &context));
 
 	slhdsa->recycleKeyPair(kp);
 	slhdsa->recycleParameters(p);

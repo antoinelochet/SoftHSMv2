@@ -425,6 +425,7 @@ bool SecureDataManager::decrypt(const ByteString& encrypted, ByteString& plainte
 	}
 
 	// Take the IV from the input data
+	DEBUG_MSG("AES block size %d", aes->getBlockSize());
 	ByteString IV = encrypted.substr(0, aes->getBlockSize());
 
 	if (IV.size() != aes->getBlockSize())
@@ -442,6 +443,7 @@ bool SecureDataManager::decrypt(const ByteString& encrypted, ByteString& plainte
 	    !aes->decryptUpdate(encrypted.substr(aes->getBlockSize()), plaintext) ||
 	    !aes->decryptFinal(finalBlock))
 	{
+		ERROR_MSG("Error when decrypting data");
 		return false;
 	}
 

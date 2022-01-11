@@ -3855,13 +3855,6 @@ static CK_RV AsymDecrypt(Session* session, CK_BYTE_PTR pEncryptedData, CK_ULONG 
 
 	// Get the data
 	ByteString encryptedData(pEncryptedData, ulEncryptedDataLen);
-
-	int errorCode = 0;
-
-	if (!asymCrypto->checkEncryptedDataSize(privateKey, encryptedData, &errorCode)) {
-		return errorCode;
-	}
-
 	ByteString data;
 
 	// Decrypt the data
@@ -4624,9 +4617,6 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 
 CK_RV SoftHSM::GmacSignInit(Token* token, Session* session, CK_MECHANISM_PTR pMechanism, OSObject *key)
 {
-
-	// Get key info
-	CK_KEY_TYPE keyType = key->getUnsignedLongValue(CKA_KEY_TYPE, CKK_VENDOR_DEFINED);
 
 	// Get the symmetric algorithm matching the mechanism
 	ByteString iv;

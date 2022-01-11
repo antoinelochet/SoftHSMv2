@@ -52,31 +52,30 @@ public:
 
 
 	/** \brief Sign data */
-	virtual bool sign(PrivateKey *privateKey, const ByteString &dataToSign, ByteString &signature, const AsymMech::Type mechanism, const void *param = NULL, const size_t paramLen = 0, const MechanismParam* mechanismParam = NULL);
+	virtual bool sign(PrivateKey *privateKey, const ByteString &dataToSign, ByteString &signature, const AsymMech::Type mechanism, const MechanismParam* mechanismParam = NULL);
 	/** \brief Initialize signing */
-	virtual bool signInit(PrivateKey* privateKey, const AsymMech::Type mechanism, const void* param = NULL, const size_t paramLen = 0, const MechanismParam* mechanismParam = NULL);
+	virtual bool signInit(PrivateKey* privateKey, const AsymMech::Type mechanism, const MechanismParam* mechanismParam = NULL);
 	/** \brief Update signing */
 	virtual bool signUpdate(const ByteString& dataToSign);
 	/** \brief Finalize signing */
 	virtual bool signFinal(ByteString& signature);
 
 	/** \brief Verify signature */
-	virtual bool verify(PublicKey* publicKey, const ByteString& originalData, const ByteString& signature, const AsymMech::Type mechanism, const void* param = NULL, const size_t paramLen = 0, const MechanismParam* mechanismParam = NULL);
+	virtual bool verify(PublicKey* publicKey, const ByteString& originalData, const ByteString& signature, const AsymMech::Type mechanism, const MechanismParam* mechanismParam = NULL);
 	/** \brief Initialize verification */
-	virtual bool verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism, const void* param = NULL, const size_t paramLen = 0, const MechanismParam* mechanismParam = NULL);
+	virtual bool verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism, const MechanismParam* mechanismParam = NULL);
 	/** \brief Update verification */
 	virtual bool verifyUpdate(const ByteString& originalData);
 	/** \brief Finalize verification */
 	virtual bool verifyFinal(const ByteString& signature);
 
 	/** \brief Encrypt data */
-	virtual bool encrypt(PublicKey* publicKey, const ByteString& data, ByteString& encryptedData, const AsymMech::Type padding);
+    virtual bool encrypt(PublicKey* publicKey, const ByteString& data, ByteString& encryptedData, const AsymMech::Type padding,
+         const MechanismParam* mechanismParam = NULL);
 
-
-	/** \brief Check encrypted data size */
-	virtual bool checkEncryptedDataSize(PrivateKey* privateKey, const ByteString& encryptedData, int* errorCode);
 	/** \brief Decrypt data */
-	virtual bool decrypt(PrivateKey* privateKey, const ByteString& encryptedData, ByteString& data, const AsymMech::Type padding);
+	virtual bool decrypt(PrivateKey* privateKey, const ByteString& encryptedData, ByteString& data, const AsymMech::Type padding,
+             const MechanismParam* mechanismParam = NULL);
 
 
 // Key factory
