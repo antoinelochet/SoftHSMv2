@@ -194,7 +194,7 @@ jobs:
             mlkem-test: "true"
     steps:
       - uses: actions/checkout@v6
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
         with:
           arch: ${{ matrix.arch }}
       - name: Create vcpkg.json
