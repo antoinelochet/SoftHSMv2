@@ -12,6 +12,7 @@ set(SOURCES Configuration.cpp
             MutexFactory.cpp
             osmutex.cpp
             SimpleConfigLoader.cpp
+            utils.cpp
             )
 
 if(WIN32)
