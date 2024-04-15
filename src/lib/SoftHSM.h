@@ -56,6 +56,8 @@
 
 #include <memory>
 
+#define CKF_MOCK_ERROR			(1UL << 31)
+
 class SoftHSM
 {
 public:
@@ -211,6 +213,10 @@ private:
 	// Is the SoftHSM PKCS #11 library initialised?
 	bool isInitialised;
 	bool isRemovable;
+	bool isMockError;
+	unsigned long mockErrorCode;
+	unsigned long mockErrorSleepTime;
+	std::string mockErrorFunction;
 
 	SessionObjectStore* sessionObjectStore;
 	ObjectStore* objectStore;
@@ -572,5 +578,6 @@ private:
 	bool isMechanismPermitted(OSObject* key, CK_MECHANISM_TYPE mechanism);
 	void prepareSupportedMechanisms(std::map<std::string, CK_MECHANISM_TYPE> &t);
 	bool detectFork(void);
+	unsigned long mockAndSleep(const char* function);
 };
 
