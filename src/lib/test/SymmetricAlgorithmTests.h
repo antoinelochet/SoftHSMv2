@@ -43,6 +43,7 @@ class SymmetricAlgorithmTests : public TestsBase
 {
 	CPPUNIT_TEST_SUITE(SymmetricAlgorithmTests);
 	CPPUNIT_TEST(testAesEncryptDecrypt);
+	CPPUNIT_TEST(testAesCcm);
 	CPPUNIT_TEST(testDesEncryptDecrypt);
 #ifdef HAVE_AES_KEY_WRAP
 	CPPUNIT_TEST(testAesWrapUnwrap);
@@ -61,6 +62,7 @@ public:
 	using Bytes = std::vector<CK_BYTE>;
 	
 	void testAesEncryptDecrypt();
+	void testAesCcm();
 	void testDesEncryptDecrypt();
 	void testAesWrapUnwrap();
 	void testDesWrapUnwrap();

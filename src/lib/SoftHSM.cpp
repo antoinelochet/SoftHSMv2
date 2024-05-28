@@ -933,6 +933,7 @@ void SoftHSM::prepareSupportedMechanisms(std::map<std::string, CK_MECHANISM_TYPE
 	t["CKM_AES_CBC_PAD"]		= CKM_AES_CBC_PAD;
 	t["CKM_AES_CTR"]		= CKM_AES_CTR;
 	t["CKM_AES_GCM"]		= CKM_AES_GCM;
+	t["CKM_AES_CCM"]		= CKM_AES_CCM;
 	t["CKM_AES_KEY_WRAP"]		= CKM_AES_KEY_WRAP;
 #ifdef HAVE_AES_KEY_WRAP_PAD
 	t["CKM_AES_KEY_WRAP_PAD"]	= CKM_AES_KEY_WRAP_PAD;
@@ -1438,6 +1439,7 @@ CK_RV SoftHSM::C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_
 		case CKM_AES_ECB:
 		case CKM_AES_CTR:
 		case CKM_AES_GCM:
+		case CKM_AES_CCM:
 			pInfo->ulMinKeySize = 16;
 			pInfo->ulMaxKeySize = 32;
 			pInfo->flags |= CKF_ENCRYPT | CKF_DECRYPT;
@@ -2596,6 +2598,7 @@ static bool isSymMechanism(CK_MECHANISM_PTR pMechanism)
 		case CKM_AES_CBC_PAD:
 		case CKM_AES_CTR:
 		case CKM_AES_GCM:
+		case CKM_AES_CCM:
 			return true;
 		default:
 			return false;
@@ -2833,6 +2836,34 @@ CK_RV SoftHSM::SymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 			}
 			tagBytes = tagBytes / 8;
 			break;
+		case CKM_AES_CCM:
+			if (keyType != CKK_AES)
+				return CKR_KEY_TYPE_INCONSISTENT;
+			algo = SymAlgo::AES;
+			mode = SymMode::CCM;
+			if (pMechanism->pParameter == NULL_PTR ||
+			    pMechanism->ulParameterLen != sizeof(CK_CCM_PARAMS))
+			{
+				DEBUG_MSG("CCM mode requires parameters");
+				return CKR_ARGUMENTS_BAD;
+			}
+			if (CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen < 7 || CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen > 13) {
+				DEBUG_MSG("Invalid ulNonceLen value, is %lu should be 7 ≤ ulNonceLen ≤ 13.", (unsigned long)CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+				return CKR_ARGUMENTS_BAD;
+			}
+			iv.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+			memcpy(&iv[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pNonce, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+			aad.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
+			if (CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen > 0)
+				memcpy(&aad[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pAAD, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
+			tagBytes = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulMACLen;
+			counterBits = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulDataLen;
+			if (tagBytes < 4 || tagBytes > 16 || tagBytes % 2 != 0)
+			{
+				DEBUG_MSG("Invalid ulMACLen value, is %lu should be 4, 6, 8, 10, 12, 14 or 16", (unsigned long)tagBytes);
+				return CKR_ARGUMENTS_BAD;
+			}
+			break;
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -3050,6 +3081,11 @@ static CK_RV SymEncrypt(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen,
 		session->resetOp();
 		return CKR_DATA_LEN_RANGE;
 	}
+	if (!cipher->checkCCMLength(ulDataLen, true))
+	{
+		session->resetOp();
+		return CKR_DATA_LEN_RANGE;
+	}
 
 	if (pEncryptedData == NULL_PTR)
 	{
@@ -3212,6 +3248,11 @@ static CK_RV SymEncryptUpdate(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDa
 		session->resetOp();
 		return CKR_DATA_LEN_RANGE;
 	}
+	if (!cipher->checkCCMLength(remainingSize + ulDataLen, false))
+	{
+		session->resetOp();
+		return CKR_DATA_LEN_RANGE;
+	}
 
 	// Check data size
 	if (pEncryptedData == NULL_PTR)
@@ -3318,6 +3359,11 @@ static CK_RV SymEncryptFinal(Session* session, CK_BYTE_PTR pEncryptedData, CK_UL
 		}
 		// when padding: an integral of the block size that is longer than the remaining data.
 		size = isPadding ? ((remainingSize + blockSize) / blockSize) * blockSize : remainingSize;
+	}
+	if (!cipher->checkCCMLength(cipher->getBufferSize(), true))
+	{
+		session->resetOp();
+		return CKR_DATA_LEN_RANGE;
 	}
 
 	// Give required output buffer size.
@@ -3627,6 +3673,34 @@ CK_RV SoftHSM::SymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 			}
 			tagBytes = tagBytes / 8;
 			break;
+		case CKM_AES_CCM:
+			if (keyType != CKK_AES)
+				return CKR_KEY_TYPE_INCONSISTENT;
+			algo = SymAlgo::AES;
+			mode = SymMode::CCM;
+			if (pMechanism->pParameter == NULL_PTR ||
+			    pMechanism->ulParameterLen != sizeof(CK_CCM_PARAMS))
+			{
+				DEBUG_MSG("CCM mode requires parameters");
+				return CKR_ARGUMENTS_BAD;
+			}
+			if (CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen < 7 || CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen > 13) {
+				DEBUG_MSG("Invalid ulNonceLen value, is %lu should be 7 ≤ ulNonceLen ≤ 13.", (unsigned long)CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+				return CKR_ARGUMENTS_BAD;
+			}
+			iv.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+			memcpy(&iv[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pNonce, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+			aad.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
+			if (CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen > 0)
+				memcpy(&aad[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pAAD, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
+			tagBytes = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulMACLen;
+			counterBits = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulDataLen;
+			if (tagBytes < 4 || tagBytes > 16 || tagBytes % 2 != 0)
+			{
+				DEBUG_MSG("Invalid ulMACLen value, is %lu should be 4, 6, 8, 10, 12, 14 or 16", (unsigned long)tagBytes);
+				return CKR_ARGUMENTS_BAD;
+			}
+			break;
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -3834,6 +3908,11 @@ static CK_RV SymDecrypt(Session* session, CK_BYTE_PTR pEncryptedData, CK_ULONG u
 		session->resetOp();
 		return CKR_ENCRYPTED_DATA_LEN_RANGE;
 	}
+	if (!cipher->checkCCMLength(ulEncryptedDataLen, true))
+	{
+		session->resetOp();
+		return CKR_ENCRYPTED_DATA_LEN_RANGE;
+	}
 
 	if (pData == NULL_PTR)
 	{
@@ -4015,6 +4094,11 @@ static CK_RV SymDecryptUpdate(Session* session, CK_BYTE_PTR pEncryptedData, CK_U
 		session->resetOp();
 		return CKR_ENCRYPTED_DATA_LEN_RANGE;
 	}
+	if (!cipher->checkCCMLength(remainingSize + ulEncryptedDataLen, false))
+	{
+		session->resetOp();
+		return CKR_ENCRYPTED_DATA_LEN_RANGE;
+	}
 
 	// Give required output buffer size.
 	if (pData == NULL_PTR)
@@ -4121,6 +4205,11 @@ static CK_RV SymDecryptFinal(Session* session, CK_BYTE_PTR pDecryptedData, CK_UL
 		// It is at least one padding byte. If no padding the all remains will be returned.
 		size_t paddingAdjustByte = cipher->getPaddingMode() ? 1 : 0;
 		size = remainingSize - paddingAdjustByte;
+	}
+	if (!cipher->checkCCMLength(remainingSize, true))
+	{
+		session->resetOp();
+		return CKR_ENCRYPTED_DATA_LEN_RANGE;
 	}
 
 	// Give required output buffer size.

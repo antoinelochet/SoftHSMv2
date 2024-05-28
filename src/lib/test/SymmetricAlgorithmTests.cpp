@@ -1805,6 +1805,204 @@ void SymmetricAlgorithmTests::testAesEncryptDecrypt()
 	}
 }
 
+// CKM_AES_CCM through the PKCS#11 interface, with a key of known value: output must match reference vectors
+// (NIST SP 800-38C Appendix C and vectors checked against OpenSSL and Bouncy Castle), the token must decrypt them,
+// and invalid nonce or MAC lengths must be rejected.
+void SymmetricAlgorithmTests::testAesCcm()
+{
+	struct Vector
+	{
+		const char* key;
+		const char* nonce;
+		const char* aad;
+		const char* plain;
+		CK_ULONG macLen;
+		const char* cipher;
+	};
+	const Vector vectors[] =
+	{
+		// SP 800-38C Example 1: 7-byte nonce, 4-byte MAC
+		{ "404142434445464748494a4b4c4d4e4f", "10111213141516", "0001020304050607", "20212223", 4,
+		  "7162015b4dac255d" },
+		// SP 800-38C Example 2: 8-byte nonce, 6-byte MAC
+		{ "404142434445464748494a4b4c4d4e4f", "1011121314151617", "000102030405060708090a0b0c0d0e0f",
+		  "202122232425262728292a2b2c2d2e2f", 6, "d2a1f0e051ea5f62081a7792073d593d1fc64fbfaccd" },
+		// SP 800-38C Example 3: 12-byte nonce, 8-byte MAC
+		{ "404142434445464748494a4b4c4d4e4f", "101112131415161718191a1b", "000102030405060708090a0b0c0d0e0f10111213",
+		  "202122232425262728292a2b2c2d2e2f3031323334353637", 8,
+		  "e3b201a9f5b71a7a9b1ceaeccd97e70b6176aad9a4428aa5484392fbc1b09951" },
+		// 13-byte nonce with a 100-byte payload
+		{ "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf", "d0d1d2d3d4d5d6d7d8d9dadbdc", "000102030405060708090a0b0c0d0e0f",
+		  "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+		  "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60616263",
+		  16, "c72f6562a96933e1dcb7c7432f226e378d978c362ff2e1a3406f9b2b94d607a61bce3e9322b50d99c74c3a19be23aab7"
+		  "ed327314bc74e3a88e3bb5bedf90b3d2fdd55a966164f7f93388d370963b484300d69aa150f7ad3ae95b3299fcfc3b85"
+		  "ba541e661a31b8262fcc2d360471b023358ffd29" },
+		// 1-byte payload with an 8-byte nonce whose last bit is set
+		{ "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf", "d0d1d2d3d4d5d6d7", "", "5a", 16,
+		  "09dec271a0383d50fdaac85affd60b6c51" },
+	};
+
+	CK_RV rv;
+	CK_SESSION_HANDLE hSession;
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSession) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+	rv = CRYPTOKI_F_PTR( C_Login(hSession,CKU_USER,m_userPin1,m_userPin1Length) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	auto hex = [](const char* s) {
+		Bytes out;
+		for (size_t i = 0; s[i] != '\0' && s[i + 1] != '\0'; i += 2)
+		{
+			out.push_back((CK_BYTE) std::stoul(std::string(s + i, 2), NULL, 16));
+		}
+		return out;
+	};
+
+	for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++)
+	{
+		const std::string msg = "CCM vector " + std::to_string(i);
+		Bytes key = hex(vectors[i].key), nonce = hex(vectors[i].nonce), aad = hex(vectors[i].aad);
+		Bytes plain = hex(vectors[i].plain), expected = hex(vectors[i].cipher);
+
+		CK_OBJECT_CLASS keyClass = CKO_SECRET_KEY;
+		CK_KEY_TYPE keyType = CKK_AES;
+		CK_BBOOL bTrue = CK_TRUE, bFalse = CK_FALSE;
+		CK_ATTRIBUTE keyAttribs[] = {
+			{ CKA_CLASS, &keyClass, sizeof(keyClass) },
+			{ CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+			{ CKA_TOKEN, &bFalse, sizeof(bFalse) },
+			{ CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+			{ CKA_DECRYPT, &bTrue, sizeof(bTrue) },
+			{ CKA_VALUE, &key[0], key.size() }
+		};
+		CK_OBJECT_HANDLE hKey = CK_INVALID_HANDLE;
+		rv = CRYPTOKI_F_PTR( C_CreateObject(hSession, keyAttribs, sizeof(keyAttribs)/sizeof(CK_ATTRIBUTE), &hKey) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+
+		CK_CCM_PARAMS params = { plain.size(), &nonce[0], nonce.size(), aad.size() ? &aad[0] : NULL_PTR, aad.size(), vectors[i].macLen };
+		CK_MECHANISM mechanism = { CKM_AES_CCM, &params, sizeof(params) };
+
+		// Encrypt: the token output must be the reference cryptogram
+		Bytes cipher(plain.size() + 16);
+		CK_ULONG cipherLen = cipher.size();
+		rv = CRYPTOKI_F_PTR( C_EncryptInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Encrypt(hSession, &plain[0], plain.size(), &cipher[0], &cipherLen) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+		cipher.resize(cipherLen);
+		CPPUNIT_ASSERT_MESSAGE(msg, cipher == expected);
+
+		// Decrypt the reference cryptogram
+		Bytes recovered(expected.size());
+		CK_ULONG recoveredLen = recovered.size();
+		rv = CRYPTOKI_F_PTR( C_DecryptInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Decrypt(hSession, &expected[0], expected.size(), &recovered[0], &recoveredLen) );
+		CPPUNIT_ASSERT_MESSAGE(msg + " rv=" + std::to_string(rv), rv == CKR_OK);
+		CPPUNIT_ASSERT_MESSAGE(msg, Bytes(recovered.begin(), recovered.begin() + recoveredLen) == plain);
+
+		// A modified tag must be rejected
+		Bytes tampered(expected);
+		tampered[tampered.size() - 1] ^= 0x01;
+		recoveredLen = recovered.size();
+		rv = CRYPTOKI_F_PTR( C_DecryptInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Decrypt(hSession, &tampered[0], tampered.size(), &recovered[0], &recoveredLen) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_ENCRYPTED_DATA_INVALID);
+
+		// Multi-part encryption must produce the same cryptogram
+		{
+			const size_t split = plain.size() / 2;
+			Bytes multi(plain.size() + 16);
+			CK_ULONG partLen = multi.size();
+			rv = CRYPTOKI_F_PTR( C_EncryptInit(hSession, &mechanism, hKey) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_EncryptUpdate(hSession, &plain[0], split, &multi[0], &partLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			CK_ULONG total = partLen;
+			partLen = multi.size() - total;
+			rv = CRYPTOKI_F_PTR( C_EncryptUpdate(hSession, &plain[split], plain.size() - split, &multi[total], &partLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			total += partLen;
+			partLen = multi.size() - total;
+			rv = CRYPTOKI_F_PTR( C_EncryptFinal(hSession, &multi[total], &partLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			total += partLen;
+			multi.resize(total);
+			CPPUNIT_ASSERT_MESSAGE(msg, multi == expected);
+		}
+
+		// Payload length different from ulDataLen must be rejected
+		{
+			CK_CCM_PARAMS wrongLen = params;
+			wrongLen.ulDataLen = plain.size() + 1;
+			CK_MECHANISM wrongMechanism = { CKM_AES_CCM, &wrongLen, sizeof(wrongLen) };
+			Bytes out(plain.size() + 32);
+			CK_ULONG outLen = out.size();
+			rv = CRYPTOKI_F_PTR( C_EncryptInit(hSession, &wrongMechanism, hKey) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_Encrypt(hSession, &plain[0], plain.size(), &out[0], &outLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_DATA_LEN_RANGE);
+			outLen = out.size();
+			rv = CRYPTOKI_F_PTR( C_DecryptInit(hSession, &wrongMechanism, hKey) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_Decrypt(hSession, &expected[0], expected.size(), &out[0], &outLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_ENCRYPTED_DATA_LEN_RANGE);
+
+			// Multi-part: too little data at final, too much data at update
+			outLen = out.size();
+			rv = CRYPTOKI_F_PTR( C_EncryptInit(hSession, &wrongMechanism, hKey) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_EncryptUpdate(hSession, &plain[0], plain.size(), &out[0], &outLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			outLen = out.size();
+			rv = CRYPTOKI_F_PTR( C_EncryptFinal(hSession, &out[0], &outLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_DATA_LEN_RANGE);
+
+			wrongLen.ulDataLen = plain.size() - 1;
+			outLen = out.size();
+			rv = CRYPTOKI_F_PTR( C_EncryptInit(hSession, &wrongMechanism, hKey) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_EncryptUpdate(hSession, &plain[0], plain.size(), &out[0], &outLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_DATA_LEN_RANGE);
+			outLen = out.size();
+			rv = CRYPTOKI_F_PTR( C_DecryptInit(hSession, &wrongMechanism, hKey) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_DecryptUpdate(hSession, &expected[0], expected.size(), &out[0], &outLen) );
+			CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_ENCRYPTED_DATA_LEN_RANGE);
+		}
+
+		// Out-of-range nonce and MAC lengths are rejected
+		if (i == 0)
+		{
+			CK_BYTE longNonce[14] = { 0 };
+			CK_CCM_PARAMS bad = params;
+			bad.nonce = longNonce;
+			bad.ulNonceLen = sizeof(longNonce);
+			CK_MECHANISM badMechanism = { CKM_AES_CCM, &bad, sizeof(bad) };
+			CPPUNIT_ASSERT(CRYPTOKI_F_PTR( C_EncryptInit(hSession, &badMechanism, hKey) ) == CKR_ARGUMENTS_BAD);
+			CPPUNIT_ASSERT(CRYPTOKI_F_PTR( C_DecryptInit(hSession, &badMechanism, hKey) ) == CKR_ARGUMENTS_BAD);
+			bad.ulNonceLen = 6;
+			CPPUNIT_ASSERT(CRYPTOKI_F_PTR( C_EncryptInit(hSession, &badMechanism, hKey) ) == CKR_ARGUMENTS_BAD);
+			bad = params;
+			bad.ulMACLen = 5;
+			CPPUNIT_ASSERT(CRYPTOKI_F_PTR( C_EncryptInit(hSession, &badMechanism, hKey) ) == CKR_ARGUMENTS_BAD);
+			CPPUNIT_ASSERT(CRYPTOKI_F_PTR( C_DecryptInit(hSession, &badMechanism, hKey) ) == CKR_ARGUMENTS_BAD);
+			bad.ulMACLen = 18;
+			CPPUNIT_ASSERT(CRYPTOKI_F_PTR( C_EncryptInit(hSession, &badMechanism, hKey) ) == CKR_ARGUMENTS_BAD);
+		}
+
+		rv = CRYPTOKI_F_PTR( C_DestroyObject(hSession, hKey) );
+		CPPUNIT_ASSERT_MESSAGE(msg, rv == CKR_OK);
+	}
+}
+
 
 void SymmetricAlgorithmTests::testAesWrapUnwrap()
 {

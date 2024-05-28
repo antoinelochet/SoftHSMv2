@@ -70,6 +70,9 @@ protected:
 	// Return the right cipher for the operation
 	virtual std::string getCipher() const = 0;
 
+	// Length of the IV/nonce of the current operation (CCM derives L from it)
+	size_t currentNonceBytes;
+
 private:
 	// The current context
 	Botan::Pipe* cryption;
@@ -77,6 +80,9 @@ private:
 	// The maximum bytes to encrypt/decrypt
 	Botan::BigInt maximumBytes;
 	Botan::BigInt counterBytes;
+
+	// Plaintext bytes written during encryption (checked against ulDataLen for CCM)
+	size_t currentDataBytes;
 };
 
 #endif // !_SOFTHSM_V2_BOTANSYMMETRICALGORITHM_H

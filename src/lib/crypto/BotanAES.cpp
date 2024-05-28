@@ -250,6 +250,9 @@ std::string BotanAES::getCipher() const
 			break;
 		case SymMode::GCM:
 			return algo + "/GCM(" + std::to_string(currentTagBytes) + ")";
+		case SymMode::CCM:
+			// L (size of the length field) and the nonce length are tied: L = 15 - nonce length
+			return algo + "/CCM(" + std::to_string(currentTagBytes) + "," + std::to_string(15 - currentNonceBytes) + ")";
 		default:
 			ERROR_MSG("Invalid AES cipher mode %i", currentCipherMode);
 
