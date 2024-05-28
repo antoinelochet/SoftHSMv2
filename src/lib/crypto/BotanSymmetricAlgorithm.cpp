@@ -79,6 +79,8 @@ std::vector<std::string> split_on_delim(const std::string& str, char delim)
 BotanSymmetricAlgorithm::BotanSymmetricAlgorithm()
 {
 	cryption = NULL;
+	currentNonceBytes = 0;
+	currentDataBytes = 0;
 	maximumBytes = Botan::BigInt(1);
 	maximumBytes.flip_sign();
 	counterBytes = Botan::BigInt(0);
@@ -94,6 +96,7 @@ BotanSymmetricAlgorithm::~BotanSymmetricAlgorithm()
 // Encryption functions
 bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode::Type mode /* = SymMode:CBC */, const ByteString& IV /* = ByteString()*/, bool padding /* = true */, size_t counterBits /* = 0 */, const ByteString& aad /* = ByteString() */, size_t tagBytes /* = 0 */)
 {
+
 	// Call the superclass initialiser
 	if (!SymmetricAlgorithm::encryptInit(key, mode, IV, padding, counterBits, aad, tagBytes))
 	{
@@ -101,7 +104,7 @@ bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode
 	}
 
 	// Check the IV
-	if (mode != SymMode::GCM && (IV.size() > 0) && (IV.size() != getBlockSize()))
+	if ((mode != SymMode::GCM && mode != SymMode::CCM) && (IV.size() > 0) && (IV.size() != getBlockSize()))
 	{
 		ERROR_MSG("Invalid IV size (%d bytes, expected %d bytes)", IV.size(), getBlockSize());
 
@@ -122,8 +125,8 @@ bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode
 		iv.wipe(getBlockSize());
 	}
 
-	// Check the counter bits
-	if (counterBits > 0)
+	// Check the counter bits (for CCM, counterBits carries ulDataLen, not a CTR counter size)
+	if (counterBits > 0 && mode != SymMode::CCM)
 	{
 		Botan::BigInt counter = BotanUtil::byteString2bigInt(iv);
 		counter.mask_bits(counterBits);
@@ -153,6 +156,8 @@ bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode
 	}
 
 	// Determine the cipher
+	currentNonceBytes = iv.size();
+	currentDataBytes = 0;
 	std::string cipherName = getCipher();
 
 	if (cipherName == "")
@@ -188,7 +193,7 @@ bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode
 			cipher->set_key(botanKey);
 			cryption = new Botan::Pipe(cipher);
 		}
-		else if (mode == SymMode::GCM)
+		else if (mode == SymMode::GCM || mode == SymMode::CCM)
 		{
 			Botan::AEAD_Mode* aead = Botan::get_aead(cipherName, Botan::ENCRYPTION);
 			aead->set_key(botanKey);
@@ -256,6 +261,7 @@ bool BotanSymmetricAlgorithm::encryptUpdate(const ByteString& data, ByteString& 
 	{
 		counterBytes += data.size();
 	}
+	currentDataBytes += data.size();
 
 	// Read data
 	int bytesRead = 0;
@@ -288,8 +294,22 @@ bool BotanSymmetricAlgorithm::encryptUpdate(const ByteString& data, ByteString& 
 
 bool BotanSymmetricAlgorithm::encryptFinal(ByteString& encryptedData)
 {
+	SymMode::Type mode = currentCipherMode;
+	size_t ccmDataBytes = currentCounterBits;
+
 	if (!SymmetricAlgorithm::encryptFinal(encryptedData))
 	{
+		delete cryption;
+		cryption = NULL;
+
+		return false;
+	}
+
+	// Botan does not need the payload length up front: enforce ulDataLen explicitly
+	if (mode == SymMode::CCM && currentDataBytes != ccmDataBytes)
+	{
+		ERROR_MSG("CCM data length (%zu) differs from ulDataLen (%zu)", currentDataBytes, ccmDataBytes);
+
 		delete cryption;
 		cryption = NULL;
 
@@ -336,7 +356,7 @@ bool BotanSymmetricAlgorithm::decryptInit(const SymmetricKey* key, const SymMode
 	}
 
 	// Check the IV
-	if (mode != SymMode::GCM && (IV.size() > 0) && (IV.size() != getBlockSize()))
+	if ((mode != SymMode::GCM && mode != SymMode::CCM) && (IV.size() > 0) && (IV.size() != getBlockSize()))
 	{
 		ERROR_MSG("Invalid IV size (%d bytes, expected %d bytes)", IV.size(), getBlockSize());
 
@@ -357,8 +377,8 @@ bool BotanSymmetricAlgorithm::decryptInit(const SymmetricKey* key, const SymMode
 		iv.wipe(getBlockSize());
 	}
 
-	// Check the counter bits
-	if (counterBits > 0)
+	// Check the counter bits (for CCM, counterBits carries ulDataLen, not a CTR counter size)
+	if (counterBits > 0 && mode != SymMode::CCM)
 	{
 		Botan::BigInt counter = BotanUtil::byteString2bigInt(iv);
 		counter.mask_bits(counterBits);
@@ -388,6 +408,7 @@ bool BotanSymmetricAlgorithm::decryptInit(const SymmetricKey* key, const SymMode
 	}
 
 	// Determine the cipher class
+	currentNonceBytes = iv.size();
 	std::string cipherName = getCipher();
 
 	if (cipherName == "")
@@ -434,6 +455,19 @@ bool BotanSymmetricAlgorithm::decryptInit(const SymmetricKey* key, const SymMode
 			filter->set_iv(botanIV);
 			cryption = new Botan::Pipe(filter);
 		}
+		else if (mode == SymMode::CCM)
+		{
+			Botan::AEAD_Mode* aead = Botan::get_aead(cipherName, Botan::DECRYPTION);
+			aead->set_key(botanKey);
+			if (aad.size() > 0) {
+				aead->set_associated_data(aad.const_byte_str(), aad.size());
+			}
+
+			Botan::InitializationVector botanIV = Botan::InitializationVector(IV.const_byte_str(), IV.size());
+			Botan::Keyed_Filter* filter = new Botan::Cipher_Mode_Filter(aead);
+			filter->set_iv(botanIV);
+			cryption = new Botan::Pipe(filter);
+		}
 		else
 		{
 			Botan::InitializationVector botanIV = Botan::InitializationVector(IV.const_byte_str(), IV.size());
@@ -468,7 +502,7 @@ bool BotanSymmetricAlgorithm::decryptUpdate(const ByteString& encryptedData, Byt
 	}
 
 	// AEAD ciphers should not return decrypted data until final is called
-	if (currentCipherMode == SymMode::GCM)
+	if (currentCipherMode == SymMode::GCM || currentCipherMode == SymMode::CCM)
 	{
 		data.resize(0);
 		return true;
@@ -531,6 +565,8 @@ bool BotanSymmetricAlgorithm::decryptUpdate(const ByteString& encryptedData, Byt
 bool BotanSymmetricAlgorithm::decryptFinal(ByteString& data)
 {
 	SymMode::Type mode = currentCipherMode;
+	size_t tagBytes = currentTagBytes;
+	size_t ccmDataBytes = currentCounterBits;
 	ByteString aeadBuffer = currentAEADBuffer;
 
 	if (!SymmetricAlgorithm::decryptFinal(data))
@@ -541,7 +577,18 @@ bool BotanSymmetricAlgorithm::decryptFinal(ByteString& data)
 		return false;
 	}
 
-	if (mode == SymMode::GCM)
+	// Botan does not need the payload length up front: enforce ulDataLen explicitly
+	if (mode == SymMode::CCM && (aeadBuffer.size() < tagBytes || aeadBuffer.size() - tagBytes != ccmDataBytes))
+	{
+		ERROR_MSG("CCM ciphertext length (%zu) does not match ulDataLen (%zu) plus tag (%zu)", aeadBuffer.size(), ccmDataBytes, tagBytes);
+
+		delete cryption;
+		cryption = NULL;
+
+		return false;
+	}
+
+	if (mode == SymMode::GCM || mode == SymMode::CCM)
 	{
 		// Write data
 		try

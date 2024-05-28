@@ -59,6 +59,7 @@ bool SymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode::Typ
 	currentTagBytes = tagBytes;
 	currentOperation = ENCRYPT;
 	currentBufferSize = 0;
+	currentAEADBuffer.wipe();
 
 	return true;
 }
@@ -89,6 +90,7 @@ bool SymmetricAlgorithm::encryptFinal(ByteString& /*encryptedData*/)
 	currentTagBytes = 0;
 	currentOperation = NONE;
 	currentBufferSize = 0;
+	currentAEADBuffer.wipe();
 
 	return true;
 }
@@ -121,7 +123,7 @@ bool SymmetricAlgorithm::decryptUpdate(const ByteString& encryptedData, ByteStri
 	}
 
 	currentBufferSize += encryptedData.size();
-	if (currentCipherMode == SymMode::GCM) {
+	if (currentCipherMode == SymMode::GCM || currentCipherMode == SymMode::CCM) {
 		currentAEADBuffer += encryptedData;
 	}
 
@@ -198,6 +200,16 @@ unsigned long SymmetricAlgorithm::getBufferSize()
 size_t SymmetricAlgorithm::getTagBytes()
 {
 	return currentTagBytes;
+}
+
+bool SymmetricAlgorithm::checkCCMLength(unsigned long totalBytes, bool complete)
+{
+	if (currentCipherMode != SymMode::CCM) return true;
+
+	unsigned long expected = currentCounterBits;
+	if (currentOperation == DECRYPT) expected += currentTagBytes;
+
+	return complete ? totalBytes == expected : totalBytes <= expected;
 }
 
 bool SymmetricAlgorithm::isStreamCipher()

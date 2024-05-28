@@ -59,6 +59,7 @@ struct SymMode
 		CTR,
 		ECB,
 		GCM,
+		CCM,
 		OFB
 	};
 };
@@ -111,6 +112,9 @@ public:
 	virtual bool isStreamCipher();
 	virtual bool isBlockCipher();
 	virtual bool checkMaximumBytes(unsigned long bytes) = 0;
+	// CCM: check that totalBytes of input agrees with the payload length given at init
+	// (plus the tag when decrypting); complete = no further input will follow
+	virtual bool checkCCMLength(unsigned long totalBytes, bool complete);
 
 protected:
 	// The current key
