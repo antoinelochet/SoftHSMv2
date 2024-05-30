@@ -941,6 +941,7 @@ void SoftHSM::prepareSupportedMechanisms(std::map<std::string, CK_MECHANISM_TYPE
 	t["CKM_AES_ECB_ENCRYPT_DATA"]	= CKM_AES_ECB_ENCRYPT_DATA;
 	t["CKM_AES_CBC_ENCRYPT_DATA"]	= CKM_AES_CBC_ENCRYPT_DATA;
 	t["CKM_AES_CMAC"]		= CKM_AES_CMAC;
+	t["CKM_AES_GMAC"]		= CKM_AES_GMAC;
 	t["CKM_DSA_PARAMETER_GEN"]	= CKM_DSA_PARAMETER_GEN;
 	t["CKM_DSA_KEY_PAIR_GEN"]	= CKM_DSA_KEY_PAIR_GEN;
 	t["CKM_DSA"]			= CKM_DSA;
@@ -1476,6 +1477,11 @@ CK_RV SoftHSM::C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_
 			pInfo->flags = CKF_DERIVE;
 			break;
 		case CKM_AES_CMAC:
+			pInfo->ulMinKeySize = 16;
+			pInfo->ulMaxKeySize = 32;
+			pInfo->flags = CKF_SIGN | CKF_VERIFY;
+			break;
+		case CKM_AES_GMAC:
 			pInfo->ulMinKeySize = 16;
 			pInfo->ulMaxKeySize = 32;
 			pInfo->flags = CKF_SIGN | CKF_VERIFY;
@@ -4637,6 +4643,7 @@ static bool isMacMechanism(CK_MECHANISM_PTR pMechanism)
 #endif
 		case CKM_DES3_CMAC:
 		case CKM_AES_CMAC:
+		case CKM_AES_GMAC:
 			return true;
 		default:
 			return false;
@@ -4783,6 +4790,12 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 				return CKR_KEY_TYPE_INCONSISTENT;
 			algo = MacAlgo::CMAC_AES;
 			break;
+		case CKM_AES_GMAC:
+		{
+			if (keyType != CKK_AES)
+				return CKR_KEY_TYPE_INCONSISTENT;
+			return GmacInit(token, session, pMechanism, key, SESSION_OP_SIGN);
+		}
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -4822,6 +4835,75 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 	session->setAllowMultiPartOp(true);
 	session->setAllowSinglePartOp(true);
 	session->setSymmetricKey(privkey);
+
+	return CKR_OK;
+}
+
+// CKM_AES_GMAC version of C_SignInit/C_VerifyInit
+//
+// GMAC is GCM authenticating only AAD. The AAD is CK_GCM_PARAMS.pAAD followed
+// by the data passed to C_Sign/C_SignUpdate (resp. C_Verify/C_VerifyUpdate).
+// Since some backends need the full AAD before starting GCM, the computation
+// is deferred to the final call; here we only validate and capture state.
+CK_RV SoftHSM::GmacInit(Token* token, Session* session, CK_MECHANISM_PTR pMechanism, OSObject *key, int opType)
+{
+	if (pMechanism->pParameter == NULL_PTR ||
+	    pMechanism->ulParameterLen != sizeof(CK_GCM_PARAMS))
+	{
+		DEBUG_MSG("GMAC mode requires parameters");
+		return CKR_ARGUMENTS_BAD;
+	}
+	CK_GCM_PARAMS_PTR params = CK_GCM_PARAMS_PTR(pMechanism->pParameter);
+	if (params->ulIvLen == 0 || params->pIv == NULL_PTR)
+	{
+		DEBUG_MSG("Invalid IV");
+		return CKR_ARGUMENTS_BAD;
+	}
+	if (params->ulAADLen > 0 && params->pAAD == NULL_PTR)
+	{
+		DEBUG_MSG("Invalid AAD");
+		return CKR_ARGUMENTS_BAD;
+	}
+	// A zero-length tag would authenticate nothing
+	if (params->ulTagBits == 0 || params->ulTagBits > 128 || params->ulTagBits % 8 != 0)
+	{
+		DEBUG_MSG("Invalid ulTagBits value");
+		return CKR_ARGUMENTS_BAD;
+	}
+
+	SymmetricAlgorithm* cipher = CryptoFactory::i()->getSymmetricAlgorithm(SymAlgo::AES);
+	if (cipher == NULL) return CKR_MECHANISM_INVALID;
+
+	SymmetricKey* secretkey = new SymmetricKey();
+
+	if (getSymmetricKey(secretkey, token, key) != CKR_OK)
+	{
+		cipher->recycleKey(secretkey);
+		CryptoFactory::i()->recycleSymmetricAlgorithm(cipher);
+		return CKR_GENERAL_ERROR;
+	}
+
+	size_t keyBytes = secretkey->getKeyBits().size();
+	if (keyBytes != 16 && keyBytes != 24 && keyBytes != 32)
+	{
+		cipher->recycleKey(secretkey);
+		CryptoFactory::i()->recycleSymmetricAlgorithm(cipher);
+		return CKR_KEY_SIZE_RANGE;
+	}
+	secretkey->setBitLen(keyBytes * 8);
+
+	// Session parameters: tag length in bytes, followed by the IV
+	ByteString gmacParam;
+	gmacParam += (unsigned char)(params->ulTagBits / 8);
+	gmacParam += ByteString(params->pIv, params->ulIvLen);
+
+	session->setOpType(opType);
+	session->setSymmetricCryptoOp(cipher);
+	session->setSymmetricKey(secretkey);
+	session->setParameters(gmacParam.byte_str(), gmacParam.size());
+	session->appendAAD(ByteString(params->pAAD, params->ulAADLen));
+	session->setAllowMultiPartOp(true);
+	session->setAllowSinglePartOp(true);
 
 	return CKR_OK;
 }
@@ -5680,6 +5762,138 @@ static CK_RV MacSign(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK
 	return CKR_OK;
 }
 
+// CKM_AES_GMAC: tag length in bytes, 0 if no GMAC operation is set up
+static size_t gmacTagBytes(Session* session)
+{
+	size_t paramLen = 0;
+	unsigned char* param = (unsigned char*)session->getParameters(paramLen);
+	if (session->getSymmetricCryptoOp() == NULL || param == NULL || paramLen < 2)
+		return 0;
+	return param[0];
+}
+
+// CKM_AES_GMAC: compute the tag over the AAD accumulated in the session
+static bool gmacComputeTag(Session* session, ByteString& tag)
+{
+	size_t tagBytes = gmacTagBytes(session);
+	if (tagBytes == 0) return false;
+
+	size_t paramLen = 0;
+	unsigned char* param = (unsigned char*)session->getParameters(paramLen);
+	ByteString iv(param + 1, paramLen - 1);
+
+	SymmetricAlgorithm* cipher = session->getSymmetricCryptoOp();
+	if (!cipher->encryptInit(session->getSymmetricKey(), SymMode::GCM, iv, false, 0, session->getAAD(), tagBytes))
+		return false;
+
+	// No plaintext: the output is the tag alone
+	if (!cipher->encryptFinal(tag))
+		return false;
+
+	return tag.size() == tagBytes;
+}
+
+// CKM_AES_GMAC version of C_SignUpdate/C_VerifyUpdate
+static CK_RV GmacUpdate(Session* session, CK_BYTE_PTR pPart, CK_ULONG ulPartLen)
+{
+	if (gmacTagBytes(session) == 0 || !session->getAllowMultiPartOp())
+	{
+		session->resetOp();
+		return CKR_OPERATION_NOT_INITIALIZED;
+	}
+
+	session->appendAAD(ByteString(pPart, ulPartLen));
+
+	session->setAllowSinglePartOp(false);
+	return CKR_OK;
+}
+
+// CKM_AES_GMAC: append the last part of the AAD and produce the signature
+static CK_RV GmacSignFinish(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen)
+{
+	CK_ULONG size = gmacTagBytes(session);
+	if (size == 0)
+	{
+		session->resetOp();
+		return CKR_OPERATION_NOT_INITIALIZED;
+	}
+
+	if (pSignature == NULL_PTR)
+	{
+		*pulSignatureLen = size;
+		return CKR_OK;
+	}
+
+	// Check buffer size
+	if (*pulSignatureLen < size)
+	{
+		*pulSignatureLen = size;
+		return CKR_BUFFER_TOO_SMALL;
+	}
+
+	session->appendAAD(ByteString(pData, ulDataLen));
+
+	ByteString tag;
+	if (!gmacComputeTag(session, tag))
+	{
+		session->resetOp();
+		return CKR_GENERAL_ERROR;
+	}
+
+	memcpy(pSignature, tag.const_byte_str(), size);
+	*pulSignatureLen = size;
+
+	session->resetOp();
+	return CKR_OK;
+}
+
+// CKM_AES_GMAC version of C_Sign
+static CK_RV GmacSign(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen)
+{
+	if (!session->getAllowSinglePartOp())
+	{
+		session->resetOp();
+		return CKR_OPERATION_NOT_INITIALIZED;
+	}
+
+	return GmacSignFinish(session, pData, ulDataLen, pSignature, pulSignatureLen);
+}
+
+// CKM_AES_GMAC: append the last part of the AAD and check the signature
+static CK_RV GmacVerifyFinish(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG ulSignatureLen)
+{
+	CK_ULONG size = gmacTagBytes(session);
+	if (size == 0)
+	{
+		session->resetOp();
+		return CKR_OPERATION_NOT_INITIALIZED;
+	}
+
+	if (ulSignatureLen != size)
+	{
+		ERROR_MSG("The size of the signature differs from the size of the mechanism");
+		session->resetOp();
+		return CKR_SIGNATURE_LEN_RANGE;
+	}
+
+	session->appendAAD(ByteString(pData, ulDataLen));
+
+	ByteString tag;
+	if (!gmacComputeTag(session, tag))
+	{
+		session->resetOp();
+		return CKR_GENERAL_ERROR;
+	}
+	session->resetOp();
+
+	// Constant-time comparison
+	unsigned char diff = 0;
+	for (CK_ULONG i = 0; i < size; i++)
+		diff |= tag[i] ^ pSignature[i];
+
+	return diff == 0 ? CKR_OK : CKR_SIGNATURE_INVALID;
+}
+
 // AsymmetricAlgorithm version of C_Sign
 static CK_RV AsymSign(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen)
 {
@@ -5775,13 +5989,15 @@ CK_RV SoftHSM::C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ul
 	if (mockReturnCode != CKR_OK) {
 		return mockErrorCode;
 	}
-
-	if (pData == NULL_PTR) return CKR_ARGUMENTS_BAD;
-	if (pulSignatureLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
-
+	
 	// Get the session
 	Session* session = (Session*)handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+
+	if (pulSignatureLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
+	// CKM_AES_GMAC accepts empty data (empty AAD)
+	if (pData == NULL_PTR && (ulDataLen != 0 || session->getSymmetricCryptoOp() == NULL))
+		return CKR_ARGUMENTS_BAD;
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_SIGN)
@@ -5790,6 +6006,8 @@ CK_RV SoftHSM::C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ul
 	if (session->getMacOp() != NULL)
 		return MacSign(session, pData, ulDataLen,
 			       pSignature, pulSignatureLen);
+	else if (session->getSymmetricCryptoOp() != NULL)
+		return GmacSign(session, pData, ulDataLen, pSignature, pulSignatureLen);
 	else
 		return AsymSign(session, pData, ulDataLen,
 				pSignature, pulSignatureLen);
@@ -5872,6 +6090,8 @@ CK_RV SoftHSM::C_SignUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_UL
 
 	if (session->getMacOp() != NULL)
 		return MacSignUpdate(session, pPart, ulPartLen);
+	else if (session->getSymmetricCryptoOp() != NULL)
+		return GmacUpdate(session, pPart, ulPartLen);
 	else
 		return AsymSignUpdate(session, pPart, ulPartLen);
 }
@@ -6000,6 +6220,8 @@ CK_RV SoftHSM::C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature, C
 
 	if (session->getMacOp() != NULL)
 		return MacSignFinal(session, pSignature, pulSignatureLen);
+	else if (session->getSymmetricCryptoOp() != NULL)
+		return GmacSignFinish(session, NULL_PTR, 0, pSignature, pulSignatureLen);
 	else
 		return AsymSignFinal(session, pSignature, pulSignatureLen);
 }
@@ -6181,6 +6403,12 @@ CK_RV SoftHSM::MacVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 				return CKR_KEY_TYPE_INCONSISTENT;
 			algo = MacAlgo::CMAC_AES;
 			break;
+		case CKM_AES_GMAC:
+		{
+			if (keyType != CKK_AES)
+				return CKR_KEY_TYPE_INCONSISTENT;
+			return GmacInit(token, session, pMechanism, key, SESSION_OP_VERIFY);
+		}
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -7113,6 +7341,18 @@ static CK_RV AsymVerify(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen,
 	return CKR_OK;
 }
 
+// CKM_AES_GMAC version of C_Verify
+static CK_RV GmacVerify(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG ulSignatureLen)
+{
+	if (!session->getAllowSinglePartOp())
+	{
+		session->resetOp();
+		return CKR_OPERATION_NOT_INITIALIZED;
+	}
+
+	return GmacVerifyFinish(session, pData, ulDataLen, pSignature, ulSignatureLen);
+}
+
 // Perform a single pass verification operation
 CK_RV SoftHSM::C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG ulSignatureLen)
 {
@@ -7123,12 +7363,15 @@ CK_RV SoftHSM::C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 		return mockErrorCode;
 	}
 
-	if (pData == NULL_PTR) return CKR_ARGUMENTS_BAD;
-	if (pSignature == NULL_PTR) return CKR_ARGUMENTS_BAD;
-
+	
 	// Get the session
 	Session* session = (Session*)handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+
+	// CKM_AES_GMAC accepts empty data (empty AAD)
+	if (pData == NULL_PTR && (ulDataLen != 0 || session->getSymmetricCryptoOp() == NULL))
+		return CKR_ARGUMENTS_BAD;
+	if (pSignature == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_VERIFY)
@@ -7136,6 +7379,9 @@ CK_RV SoftHSM::C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 
 	if (session->getMacOp() != NULL)
 		return MacVerify(session, pData, ulDataLen,
+				 pSignature, ulSignatureLen);
+	else if (session->getSymmetricCryptoOp() != NULL)
+		return GmacVerify(session, pData, ulDataLen,
 				 pSignature, ulSignatureLen);
 	else
 		return AsymVerify(session, pData, ulDataLen,
@@ -7214,6 +7460,8 @@ CK_RV SoftHSM::C_VerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 
 	if (session->getMacOp() != NULL)
 		return MacVerifyUpdate(session, pPart, ulPartLen);
+	else if (session->getSymmetricCryptoOp() != NULL)
+		return GmacUpdate(session, pPart, ulPartLen);
 	else
 		return AsymVerifyUpdate(session, pPart, ulPartLen);
 }
@@ -7312,6 +7560,8 @@ CK_RV SoftHSM::C_VerifyFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature,
 
 	if (session->getMacOp() != NULL)
 		return MacVerifyFinal(session, pSignature, ulSignatureLen);
+	else if (session->getSymmetricCryptoOp() != NULL)
+		return GmacVerifyFinish(session, NULL_PTR, 0, pSignature, ulSignatureLen);
 	else
 		return AsymVerifyFinal(session, pSignature, ulSignatureLen);
 }

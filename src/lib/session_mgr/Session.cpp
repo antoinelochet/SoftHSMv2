@@ -193,6 +193,8 @@ void Session::resetOp()
 		paramLen = 0;
 	}
 
+	aad.wipe();
+
 	if (mechanismParam != NULL) {
 		delete mechanismParam;
 		mechanismParam = NULL;
@@ -372,6 +374,16 @@ void* Session::getParameters(size_t& inParamLen)
 {
 	inParamLen = paramLen;
 	return param;
+}
+
+void Session::appendAAD(const ByteString& inData)
+{
+	aad += inData;
+}
+
+const ByteString& Session::getAAD()
+{
+	return aad;
 }
 
 void Session::setMechanismParam(MechanismParam* inMechanismParam)
