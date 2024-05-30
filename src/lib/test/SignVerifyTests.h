@@ -37,6 +37,7 @@
 #include "config.h"
 #include "TestsBase.h"
 #include <cppunit/extensions/HelperMacros.h>
+#include <vector>
 #ifdef WITH_OPENSSL
 	#include <openssl/opensslv.h>
 #endif
@@ -56,6 +57,8 @@ class SignVerifyTests : public TestsBase
 	CPPUNIT_TEST(testEdSignVerifyInvalidParams);
 #endif
 	CPPUNIT_TEST(testMacSignVerify);
+	CPPUNIT_TEST(testAesGmacVectors);
+	CPPUNIT_TEST(testAesGmacInvalidParams);
 #ifdef WITH_ML_DSA
 	CPPUNIT_TEST_PARAMETERIZED(testMLDSASignVerify, {CKP_ML_DSA_44, CKP_ML_DSA_65, CKP_ML_DSA_87});
 #endif
@@ -85,6 +88,8 @@ public:
 	void testEdSignVerifyInvalidParams();
 #endif
 	void testMacSignVerify();
+	void testAesGmacVectors();
+	void testAesGmacInvalidParams();
 #ifdef WITH_ML_DSA
 	void testMLDSASignVerify(CK_ULONG parameterSet);
 #endif
@@ -128,6 +133,7 @@ protected:
 	CK_RV generateDes2Key(CK_SESSION_HANDLE hSession, CK_BBOOL bToken, CK_BBOOL bPrivate, CK_OBJECT_HANDLE &hKey);
 	CK_RV generateDes3Key(CK_SESSION_HANDLE hSession, CK_BBOOL bToken, CK_BBOOL bPrivate, CK_OBJECT_HANDLE &hKey);
 	CK_RV generateAesKey(CK_SESSION_HANDLE hSession, CK_BBOOL bToken, CK_BBOOL bPrivate, CK_OBJECT_HANDLE &hKey);
+	CK_RV importAesKey(CK_SESSION_HANDLE hSession, const std::vector<CK_BYTE>& value, CK_OBJECT_HANDLE &hKey);
 	void macSignVerify(CK_MECHANISM_TYPE mechanismType, CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hKey);
 };
 

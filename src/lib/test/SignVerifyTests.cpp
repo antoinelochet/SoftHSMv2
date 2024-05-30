@@ -2259,6 +2259,324 @@ void SignVerifyTests::testVerifyInitWrongKeyType()
 	C_CloseSession(hSession);
 }
 
+static std::vector<CK_BYTE> hexToBytes(const char* hex)
+{
+	std::vector<CK_BYTE> out;
+	for (size_t i = 0; hex[i] != '\0' && hex[i+1] != '\0'; i += 2)
+	{
+		char byte[3] = { hex[i], hex[i+1], '\0' };
+		out.push_back((CK_BYTE)strtoul(byte, NULL, 16));
+	}
+	return out;
+}
+
+CK_RV SignVerifyTests::importAesKey(CK_SESSION_HANDLE hSession, const std::vector<CK_BYTE>& value, CK_OBJECT_HANDLE &hKey)
+{
+	CK_OBJECT_CLASS secretClass = CKO_SECRET_KEY;
+	CK_KEY_TYPE keyType = CKK_AES;
+	CK_BBOOL bFalse = CK_FALSE;
+	CK_BBOOL bTrue = CK_TRUE;
+	CK_ATTRIBUTE keyAttribs[] = {
+		{ CKA_CLASS, &secretClass, sizeof(secretClass) },
+		{ CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+		{ CKA_TOKEN, &bFalse, sizeof(bFalse) },
+		{ CKA_PRIVATE, &bTrue, sizeof(bTrue) },
+		{ CKA_SIGN, &bTrue, sizeof(bTrue) },
+		{ CKA_VERIFY, &bTrue, sizeof(bTrue) },
+		{ CKA_VALUE, const_cast<CK_BYTE_PTR>(value.data()), value.size() }
+	};
+
+	hKey = CK_INVALID_HANDLE;
+	return CRYPTOKI_F_PTR( C_CreateObject(hSession, keyAttribs, sizeof(keyAttribs)/sizeof(CK_ATTRIBUTE), &hKey) );
+}
+
+void SignVerifyTests::testAesGmacVectors()
+{
+	// NIST CAVP GCM test vectors with an empty plaintext (i.e. GMAC), from
+	// https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/mac/gcmtestvectors.zip
+	// With CKM_AES_GMAC the data given to C_Sign/C_Verify is the AAD.
+	struct {
+		const char* key;
+		const char* iv;
+		const char* aad;
+		const char* tag;
+	} vectors[] = {
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 96] [PTlen = 0] [AADlen = 0] [Taglen = 128] Count = 0
+		{ "11754cd72aec309bf52f7687212e8957",
+		  "3c819d9a9bed087615030b65",
+		  "",
+		  "250327c674aaf477aef2675748cf6971" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 96] [PTlen = 0] [AADlen = 128] [Taglen = 128] Count = 0
+		{ "77be63708971c4e240d1cb79e8d77feb",
+		  "e0e00f19fed7ba0136a797f3",
+		  "7a43ec1d9c0a5a78a0b16533a6213cab",
+		  "209fcc8d3675ed938e9c7166709dd946" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 96] [PTlen = 0] [AADlen = 160] [Taglen = 128] Count = 0
+		{ "2fb45e5b8f993a2bfebc4b15b533e0b4",
+		  "5b05755f984d2b90f94b8027",
+		  "e85491b2202caf1d7dce03b97e09331c32473941",
+		  "c75b7832b2a2d9bd827412b6ef5769db" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 96] [PTlen = 0] [AADlen = 720] [Taglen = 128] Count = 0
+		{ "20b5b6b854e187b058a84d57bc1538b6",
+		  "94c1935afc061cbf254b936f",
+		  "ca418e71dbf810038174eaa3719b3fcb80531c7110ad9192d105eeaafa15b819"
+		  "ac005668752b344ed1b22faf77048baf03dbddb3b47d6b00e95c4f005e0cc9b7"
+		  "627ccafd3f21b3312aa8d91d3fa0893fe5bff7d44ca46f23afe0",
+		  "b37286ebaf4a54e0ffc2a1deafc9f6db" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 96] [PTlen = 0] [AADlen = 128] [Taglen = 96] Count = 0
+		{ "bea48ae4980d27f357611014d4486625",
+		  "32bddb5c3aa998a08556454c",
+		  "8a50b0b8c7654bced884f7f3afda2ead",
+		  "8e0f6d8bf05ffebe6f500eb1" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 96] [PTlen = 0] [AADlen = 128] [Taglen = 64] Count = 0
+		{ "f106707b6feaf55ff3716682babb153c",
+		  "a8fe0334b48d9315d900e7c9",
+		  "c37b8f27d53ac3df1b8e6f705d0a24f4",
+		  "6da65b0b5be02142" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 1024] [PTlen = 0] [AADlen = 128] [Taglen = 128] Count = 0
+		{ "ce0f07629d8eb6714c32b5e5d681a227",
+		  "21e610cedeb1cac8f6709c20f225f5b4af70c3bab5d5c7efc391316a4a208f5a"
+		  "cb0870f3cec2ec19a22b9dc4e3cea1d3761b6b83366edec8328f128091ded4e0"
+		  "c0ce9cd3e20904b8d01c0a2eec248ad688564f3a57dce97ec0f87b09a01b55fe"
+		  "4f09b39370c854eabfc5fc5983e368844c6c93b252ca8c500aa5f8924e7e2468",
+		  "3c6ef2cfa387ee7ef39c930113a13f54",
+		  "2148a5ddbe3384a007f95132d1cbf237" },
+		// gcmEncryptExtIV128.rsp [Keylen = 128] [IVlen = 8] [PTlen = 0] [AADlen = 128] [Taglen = 128] Count = 0
+		{ "0bf79b6712d27951b712239ee6698eca",
+		  "e9",
+		  "86ffca2e414e9f1fff80c3decf95a5ae",
+		  "a00003e30d07ce07b45ce19420596e1a" },
+		// gcmEncryptExtIV192.rsp [Keylen = 192] [IVlen = 96] [PTlen = 0] [AADlen = 128] [Taglen = 128] Count = 0
+		{ "41c5da8667ef725220ffe39ae0ac590ac9fca729ab60ada0",
+		  "05ad13a5e2c2ab667e1a6fbc",
+		  "8b5c124bef6e2f0fe4d8c95cd5fa4cf1",
+		  "204bdb1bd62154bf08922aaa54eed705" },
+		// gcmEncryptExtIV192.rsp [Keylen = 192] [IVlen = 96] [PTlen = 0] [AADlen = 720] [Taglen = 128] Count = 0
+		{ "c25d347ffb5b7ba079be2279a0a7f220f19c74bb9c5a15b6",
+		  "b35f142182fea65c642368ed",
+		  "1967a0bd80cf2c9c58e441e12cba788f9c072177e1ce02f30d58ae981ab37eac"
+		  "452c0d9f1c5f3485d7b16ae09366821d23d44479d52ccc4acd8fa6f5b9013845"
+		  "c629f69c612c9cbbcdca3bdf43855fa7c71bff458a7d4c019ad9",
+		  "f5a0d64924aeab15a636c7ce4db52243" },
+		// gcmEncryptExtIV256.rsp [Keylen = 256] [IVlen = 96] [PTlen = 0] [AADlen = 128] [Taglen = 128] Count = 0
+		{ "78dc4e0aaf52d935c3c01eea57428f00ca1fd475f5da86a49c8dd73d68c8e223",
+		  "d79cf22d504cc793c3fb6c8a",
+		  "b96baa8c1c75a671bfb2d08d06be5f36",
+		  "3e5d486aa2e30b22e040b85723a06e76" },
+		// gcmEncryptExtIV256.rsp [Keylen = 256] [IVlen = 96] [PTlen = 0] [AADlen = 720] [Taglen = 128] Count = 0
+		{ "03ccb7dbc7b8425465c2c3fc39ed0593929ffd02a45ff583bd89b79c6f646fe9",
+		  "fd119985533bd5520b301d12",
+		  "98e68c10bf4b5ae62d434928fc6405147c6301417303ef3a703dcfd2c0c339a4"
+		  "d0a89bd29fe61fecf1066ab06d7a5c31a48ffbfed22f749b17e9bd0dc1c6f8fb"
+		  "d6fd4587184db964d5456132106d782338c3f117ec05229b0899",
+		  "cf54e7141349b66f248154427810c87a" },
+	};
+
+	CK_RV rv;
+	CK_SESSION_HANDLE hSession;
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSession) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_Login(hSession, CKU_USER, m_userPin1, m_userPin1Length) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	for (size_t v = 0; v < sizeof(vectors)/sizeof(vectors[0]); v++)
+	{
+		std::vector<CK_BYTE> key = hexToBytes(vectors[v].key);
+		std::vector<CK_BYTE> iv = hexToBytes(vectors[v].iv);
+		std::vector<CK_BYTE> aad = hexToBytes(vectors[v].aad);
+		std::vector<CK_BYTE> tag = hexToBytes(vectors[v].tag);
+		CK_BYTE_PTR pAad = aad.empty() ? NULL_PTR : aad.data();
+		CK_ULONG half = aad.size() / 2;
+
+		CK_OBJECT_HANDLE hKey;
+		rv = importAesKey(hSession, key, hKey);
+		CPPUNIT_ASSERT(rv == CKR_OK);
+
+		CK_GCM_PARAMS params = { iv.data(), iv.size(), iv.size()*8, NULL_PTR, 0, tag.size()*8 };
+		CK_MECHANISM mechanism = { CKM_AES_GMAC, &params, sizeof(params) };
+		CK_BYTE signature[16];
+		CK_ULONG ulSignatureLen;
+
+		// Single-part sign, with a length query first
+		rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Sign(hSession, pAad, aad.size(), NULL_PTR, &ulSignatureLen) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		CPPUNIT_ASSERT(ulSignatureLen == tag.size());
+		rv = CRYPTOKI_F_PTR( C_Sign(hSession, pAad, aad.size(), signature, &ulSignatureLen) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		CPPUNIT_ASSERT(ulSignatureLen == tag.size());
+		CPPUNIT_ASSERT(memcmp(signature, tag.data(), tag.size()) == 0);
+
+		// Multi-part sign
+		rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		if (!aad.empty())
+		{
+			rv = CRYPTOKI_F_PTR( C_SignUpdate(hSession, aad.data(), half) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_SignUpdate(hSession, aad.data() + half, aad.size() - half) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+		}
+		ulSignatureLen = sizeof(signature);
+		rv = CRYPTOKI_F_PTR( C_SignFinal(hSession, signature, &ulSignatureLen) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		CPPUNIT_ASSERT(ulSignatureLen == tag.size());
+		CPPUNIT_ASSERT(memcmp(signature, tag.data(), tag.size()) == 0);
+
+		// AAD from CK_GCM_PARAMS is prepended to the data
+		if (!aad.empty())
+		{
+			CK_GCM_PARAMS prefixParams = { iv.data(), iv.size(), iv.size()*8, aad.data(), half, tag.size()*8 };
+			CK_MECHANISM prefixMechanism = { CKM_AES_GMAC, &prefixParams, sizeof(prefixParams) };
+			rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &prefixMechanism, hKey) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+			ulSignatureLen = sizeof(signature);
+			rv = CRYPTOKI_F_PTR( C_Sign(hSession, aad.data() + half, aad.size() - half, signature, &ulSignatureLen) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+			CPPUNIT_ASSERT(memcmp(signature, tag.data(), tag.size()) == 0);
+		}
+
+		// Single-part and multi-part verify
+		rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Verify(hSession, pAad, aad.size(), tag.data(), tag.size()) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+
+		rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		if (!aad.empty())
+		{
+			rv = CRYPTOKI_F_PTR( C_VerifyUpdate(hSession, aad.data(), half) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_VerifyUpdate(hSession, aad.data() + half, aad.size() - half) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+		}
+		rv = CRYPTOKI_F_PTR( C_VerifyFinal(hSession, tag.data(), tag.size()) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+
+		// Tampered tag
+		std::vector<CK_BYTE> badTag = tag;
+		badTag.back() ^= 0x01;
+		rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Verify(hSession, pAad, aad.size(), badTag.data(), badTag.size()) );
+		CPPUNIT_ASSERT(rv == CKR_SIGNATURE_INVALID);
+
+		// Tampered data
+		if (!aad.empty())
+		{
+			std::vector<CK_BYTE> badAad = aad;
+			badAad[0] ^= 0x01;
+			rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &mechanism, hKey) );
+			CPPUNIT_ASSERT(rv == CKR_OK);
+			rv = CRYPTOKI_F_PTR( C_Verify(hSession, badAad.data(), badAad.size(), tag.data(), tag.size()) );
+			CPPUNIT_ASSERT(rv == CKR_SIGNATURE_INVALID);
+		}
+
+		// Truncated tag
+		rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+		rv = CRYPTOKI_F_PTR( C_Verify(hSession, pAad, aad.size(), tag.data(), tag.size() - 1) );
+		CPPUNIT_ASSERT(rv == CKR_SIGNATURE_LEN_RANGE);
+
+		rv = CRYPTOKI_F_PTR( C_DestroyObject(hSession, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_OK);
+	}
+
+	C_Logout(hSession);
+	C_CloseSession(hSession);
+}
+
+void SignVerifyTests::testAesGmacInvalidParams()
+{
+	CK_RV rv;
+	CK_SESSION_HANDLE hSession;
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSession) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_Login(hSession, CKU_USER, m_userPin1, m_userPin1Length) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	CK_OBJECT_HANDLE hKey;
+	rv = generateAesKey(hSession, IN_SESSION, IS_PRIVATE, hKey);
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	CK_BYTE iv[12] = { 0 };
+
+	// Missing parameters
+	CK_MECHANISM noParams = { CKM_AES_GMAC, NULL_PTR, 0 };
+	rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &noParams, hKey) );
+	CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+	rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &noParams, hKey) );
+	CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+
+	CK_GCM_PARAMS invalid[] = {
+		{ iv, 0, 0, NULL_PTR, 0, 128 },			// empty IV
+		{ NULL_PTR, sizeof(iv), sizeof(iv)*8, NULL_PTR, 0, 128 },	// IV pointer missing
+		{ iv, sizeof(iv), sizeof(iv)*8, NULL_PTR, 4, 128 },	// AAD pointer missing
+		{ iv, sizeof(iv), sizeof(iv)*8, NULL_PTR, 0, 0 },	// empty tag
+		{ iv, sizeof(iv), sizeof(iv)*8, NULL_PTR, 0, 100 },	// tag not a whole number of bytes
+		{ iv, sizeof(iv), sizeof(iv)*8, NULL_PTR, 0, 136 }	// tag longer than a block
+	};
+	for (size_t i = 0; i < sizeof(invalid)/sizeof(invalid[0]); i++)
+	{
+		CK_MECHANISM mechanism = { CKM_AES_GMAC, &invalid[i], sizeof(invalid[i]) };
+		rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+		rv = CRYPTOKI_F_PTR( C_VerifyInit(hSession, &mechanism, hKey) );
+		CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+	}
+
+	// Data is mandatory unless empty
+	CK_GCM_PARAMS params = { iv, sizeof(iv), sizeof(iv)*8, NULL_PTR, 0, 128 };
+	CK_MECHANISM mechanism = { CKM_AES_GMAC, &params, sizeof(params) };
+	CK_BYTE signature[16];
+	CK_ULONG ulSignatureLen = sizeof(signature);
+	rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &mechanism, hKey) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+	rv = CRYPTOKI_F_PTR( C_Sign(hSession, NULL_PTR, 1, signature, &ulSignatureLen) );
+	CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+	rv = CRYPTOKI_F_PTR( C_Sign(hSession, NULL_PTR, 0, signature, NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+
+	// Signature buffer too small keeps the operation active
+	ulSignatureLen = 8;
+	rv = CRYPTOKI_F_PTR( C_Sign(hSession, NULL_PTR, 0, signature, &ulSignatureLen) );
+	CPPUNIT_ASSERT(rv == CKR_BUFFER_TOO_SMALL);
+	CPPUNIT_ASSERT(ulSignatureLen == 16);
+	rv = CRYPTOKI_F_PTR( C_Sign(hSession, NULL_PTR, 0, signature, &ulSignatureLen) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Single-part call after a multi-part update is rejected
+	CK_BYTE data[] = { 0x01, 0x02, 0x03 };
+	rv = CRYPTOKI_F_PTR( C_SignInit(hSession, &mechanism, hKey) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+	rv = CRYPTOKI_F_PTR( C_SignUpdate(hSession, data, sizeof(data)) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+	ulSignatureLen = sizeof(signature);
+	rv = CRYPTOKI_F_PTR( C_Sign(hSession, data, sizeof(data), signature, &ulSignatureLen) );
+	CPPUNIT_ASSERT(rv == CKR_OPERATION_NOT_INITIALIZED);
+
+	C_Logout(hSession);
+	C_CloseSession(hSession);
+}
+
 #ifdef WITH_SLH_DSA
 /** Reject changed or absent signature contexts while ignoring the verification hedge flag. */
 void SignVerifyTests::verifySLHDSAContexts(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE publicKey,

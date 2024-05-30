@@ -128,6 +128,10 @@ public:
 	void setSymmetricKey(SymmetricKey* inSymmetricKey);
 	SymmetricKey* getSymmetricKey();
 
+	// AAD accumulated by a running CKM_AES_GMAC sign/verify operation
+	void appendAAD(const ByteString& inData);
+	const ByteString& getAAD();
+
 private:
 	// Constructor
 	Session();
@@ -175,6 +179,9 @@ private:
 
 	// Symmetric Crypto
 	SymmetricKey* symmetricKey;
+
+	// CKM_AES_GMAC
+	ByteString aad;
 };
 
 #endif // !_SOFTHSM_V2_SESSION_H
