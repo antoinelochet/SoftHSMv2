@@ -89,7 +89,7 @@ void InitTests::testInit2()
 	InitArgs.LockMutex = NULL_PTR;
 	InitArgs.UnlockMutex = NULL_PTR;
 	InitArgs.flags = 0;
-	InitArgs.pReserved = (CK_VOID_PTR)1;
+	InitArgs.pReserved = const_cast<char*>("not a mock configuration");
 
 	// Just make sure that we finalize any previous failed tests
 	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
@@ -243,6 +243,86 @@ void InitTests::testFinal()
 	// pReserved is reserved for future versions
 	rv = CRYPTOKI_F_PTR( C_Finalize((CK_VOID_PTR)1) );
 	CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+
+	rv = CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+}
+
+void InitTests::testMockParameters()
+{
+	CK_C_INITIALIZE_ARGS InitArgs;
+	CK_INFO info;
+	CK_RV rv;
+
+#ifdef CreateMutex
+#undef CreateMutex
+#endif
+
+	InitArgs.CreateMutex = NULL_PTR;
+	InitArgs.DestroyMutex = NULL_PTR;
+	InitArgs.LockMutex = NULL_PTR;
+	InitArgs.UnlockMutex = NULL_PTR;
+	InitArgs.flags = CKF_OS_LOCKING_OK;
+
+	// Just make sure that we finalize any previous failed tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	const char* invalid[] = {
+		"",
+		"mockErrorCode=0x30",				// no function
+		"mockErrorFunction",				// no value
+		"mockErrorFunction=",				// empty value
+		"mockErrorFunction=C_GetInfo;mockErrorCode=zz",	// not a number
+		"mockErrorFunction=C_GetInfo;mockTimes=-1",	// negative
+		"mockErrorFunction=C_GetInfo;mockTimes=1x",	// trailing garbage
+		"mockErrorFunction=C_GetInfo;unknown=1",	// unknown parameter
+		"mockErrorFunction=C_GetInfo=x"			// too many '='
+	};
+	for (size_t i = 0; i < sizeof(invalid)/sizeof(invalid[0]); i++)
+	{
+		InitArgs.pReserved = const_cast<char*>(invalid[i]);
+		rv = CRYPTOKI_F_PTR( C_Initialize((CK_VOID_PTR)&InitArgs) );
+		CPPUNIT_ASSERT(rv == CKR_ARGUMENTS_BAD);
+	}
+
+	// Whitespace around entries is ignored
+	char config[] = " mockErrorFunction = C_GetInfo ; mockErrorCode = 0x30 ;";
+	InitArgs.pReserved = config;
+	rv = CRYPTOKI_F_PTR( C_Initialize((CK_VOID_PTR)&InitArgs) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Without mockTimes, every call is mocked
+	for (int i = 0; i < 3; i++)
+	{
+		rv = CRYPTOKI_F_PTR( C_GetInfo(&info) );
+		CPPUNIT_ASSERT(rv == CKR_DEVICE_ERROR);
+	}
+
+	rv = CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// mockTimes=2 mocks exactly the first two calls
+	char configTimes[] = "mockErrorFunction=C_GetInfo;mockErrorCode=0x30;mockTimes=2";
+	InitArgs.pReserved = configTimes;
+	rv = CRYPTOKI_F_PTR( C_Initialize((CK_VOID_PTR)&InitArgs) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_GetInfo(&info) );
+	CPPUNIT_ASSERT(rv == CKR_DEVICE_ERROR);
+	rv = CRYPTOKI_F_PTR( C_GetInfo(&info) );
+	CPPUNIT_ASSERT(rv == CKR_DEVICE_ERROR);
+	rv = CRYPTOKI_F_PTR( C_GetInfo(&info) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// The mock does not survive a new initialisation
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	rv = CRYPTOKI_F_PTR( C_GetInfo(&info) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
 
 	rv = CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
 	CPPUNIT_ASSERT(rv == CKR_OK);

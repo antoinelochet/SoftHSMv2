@@ -106,7 +106,10 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <stdexcept>
+#include <cerrno>
 #include <thread>
+#include <iomanip>
+#include <sstream>
 
 #ifdef _WIN32
 #include <process.h>
@@ -139,8 +142,6 @@ std::auto_ptr<BotanCryptoFactory>* BotanCryptoFactory::instance = new std::auto_
 std::auto_ptr<SoftHSM>* SoftHSM::instance = new std::auto_ptr<SoftHSM>();
 
 #endif
-
-using namespace std::chrono_literals;
 
 /** Allocate the object wrapper for a supported class and key or certificate type. */
 static CK_RV newP11Object(CK_OBJECT_CLASS objClass, CK_KEY_TYPE keyType, CK_CERTIFICATE_TYPE certType, P11Object **p11object)
@@ -471,9 +472,7 @@ SoftHSM::SoftHSM()
 {
 	isInitialised = false;
 	isRemovable = false;
-	isMockError = false;
-	mockErrorCode = CKR_CRYPTOKI_NOT_INITIALIZED;
-	mockErrorSleepTime = 0UL;
+	resetMock();
 	sessionObjectStore = NULL;
 	objectStore = NULL;
 	slotManager = NULL;
@@ -527,41 +526,20 @@ CK_RV SoftHSM::C_Initialize(CK_VOID_PTR pInitArgs)
 
 	INFO_MSG("C_Initialize");
 
+	// Mock settings only live for one C_Initialize/C_Finalize cycle
+	resetMock();
+
 	// Do we have any arguments?
 	if (pInitArgs != NULL_PTR)
 	{
 		args = (CK_C_INITIALIZE_ARGS_PTR)pInitArgs;
 
-		// Must be set to NULL_PTR in this version of PKCS#11
-		/* if (args->pReserved != NULL_PTR)
+		// Must be set to NULL_PTR in this version of PKCS#11. As an extension,
+		// SoftHSM accepts a NUL-terminated mock configuration string.
+		if (args->pReserved != NULL_PTR)
 		{
-			ERROR_MSG("pReserved must be set to NULL_PTR");
-			return CKR_ARGUMENTS_BAD;
-		} */
-
-		if (args->pReserved != NULL_PTR) {
-			const char* reserved = ((const char*) args->pReserved);
-			DEBUG_MSG("reserved: %s, reserved.strlen: %d", reserved, strlen(reserved));
-			std::string parameters(reserved);
-			DEBUG_MSG("parameters: %s", parameters.c_str());
-			const auto parts(utils::split(parameters, ';', utils::SPLIT_TRIMMED | utils::SPLIT_NO_EMPTY));
-			DEBUG_MSG("parts.length: %d", parts.size());
-			for (const std::string& parameter : parts) {
-  				const auto parameterParts(utils::split(parameter, '=', utils::SPLIT_TRIMMED | utils::SPLIT_NO_EMPTY));
-				DEBUG_MSG("parameterParts.length: %d", parameterParts.size());
-				std::string parameterName(parameterParts[0]);
-				std::string parameterValue(parameterParts[1]);
-				DEBUG_MSG("parameterName: %s, parameterValue: %s", parameterName.c_str(), parameterValue.c_str());
-				if (parameterName.compare("mockErrorCode") == 0) {
-					isMockError = true;
-					mockErrorCode = strtoul(parameterValue.c_str(), NULL, 16);
-					DEBUG_MSG("Mocking response code with %d=%s", mockErrorCode, parameterValue.c_str());
-				} else if (parameterName.compare("mockErrorSleepTime") == 0) {
-					mockErrorSleepTime = strtoul(parameterValue.c_str(), NULL, 10);
-				} else if (parameterName.compare("mockErrorFunction") == 0) {
-					mockErrorFunction = std::string(parameterValue);
-				}
-			}
+			CK_RV mockRv = parseMockParameters((const char*)args->pReserved);
+			if (mockRv != CKR_OK) return mockRv;
 		}
 
 		// Can we spawn our own threads?
@@ -719,7 +697,7 @@ CK_RV SoftHSM::C_Finalize(CK_VOID_PTR pReserved)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Must be set to NULL_PTR in this version of PKCS#11
@@ -756,7 +734,7 @@ CK_RV SoftHSM::C_GetInfo(CK_INFO_PTR pInfo)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 	if (pInfo == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
@@ -784,7 +762,7 @@ CK_RV SoftHSM::C_GetSlotList(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR pSlotList, CK
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	return slotManager->getSlotList(objectStore, tokenPresent, pSlotList, pulCount);
@@ -798,7 +776,7 @@ CK_RV SoftHSM::C_GetSlotInfo(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	Slot* slot = slotManager->getSlot(slotID);
@@ -826,7 +804,7 @@ CK_RV SoftHSM::C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	Slot* slot = slotManager->getSlot(slotID);
@@ -1060,7 +1038,7 @@ CK_RV SoftHSM::C_GetMechanismList(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMech
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 	if (pulCount == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
@@ -1125,7 +1103,7 @@ CK_RV SoftHSM::C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 	if (pInfo == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
@@ -1662,7 +1640,7 @@ CK_RV SoftHSM::C_InitToken(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, CK_ULONG ulP
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	Slot* slot = slotManager->getSlot(slotID);
@@ -1693,7 +1671,7 @@ CK_RV SoftHSM::C_InitPIN(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin, CK_UL
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1725,7 +1703,7 @@ CK_RV SoftHSM::C_SetPIN(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pOldPin, CK_
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1767,7 +1745,7 @@ CK_RV SoftHSM::C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApp
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	Slot* slot = slotManager->getSlot(slotID);
@@ -1791,7 +1769,7 @@ CK_RV SoftHSM::C_CloseSession(CK_SESSION_HANDLE hSession)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1816,7 +1794,7 @@ CK_RV SoftHSM::C_CloseAllSessions(CK_SLOT_ID slotID)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the slot
@@ -1847,7 +1825,7 @@ CK_RV SoftHSM::C_GetSessionInfo(CK_SESSION_HANDLE hSession, CK_SESSION_INFO_PTR 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1864,7 +1842,7 @@ CK_RV SoftHSM::C_GetOperationState(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pOp
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1881,7 +1859,7 @@ CK_RV SoftHSM::C_SetOperationState(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pOp
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1900,7 +1878,7 @@ CK_RV SoftHSM::C_Login(CK_SESSION_HANDLE hSession, CK_USER_TYPE userType, CK_UTF
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1950,7 +1928,7 @@ CK_RV SoftHSM::C_Logout(CK_SESSION_HANDLE hSession)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -1990,7 +1968,7 @@ CK_RV SoftHSM::C_CopyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pTemplate == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -2179,7 +2157,7 @@ CK_RV SoftHSM::C_DestroyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObj
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -2230,7 +2208,7 @@ CK_RV SoftHSM::C_GetObjectSize(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObj
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pulSize == NULL) return CKR_ARGUMENTS_BAD;
@@ -2259,7 +2237,7 @@ CK_RV SoftHSM::C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pTemplate == NULL) return CKR_ARGUMENTS_BAD;
@@ -2311,7 +2289,7 @@ CK_RV SoftHSM::C_SetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pTemplate == NULL) return CKR_ARGUMENTS_BAD;
@@ -2367,7 +2345,7 @@ CK_RV SoftHSM::C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pT
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 	if (pTemplate == NULL_PTR && ulCount != 0) return CKR_ARGUMENTS_BAD;
 
@@ -2541,7 +2519,7 @@ CK_RV SoftHSM::C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR ph
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 	if (phObject == NULL_PTR) return CKR_ARGUMENTS_BAD;
 	if (pulObjectCount == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -2573,7 +2551,7 @@ CK_RV SoftHSM::C_FindObjectsFinal(CK_SESSION_HANDLE hSession)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -2618,7 +2596,7 @@ CK_RV SoftHSM::SymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -2858,10 +2836,10 @@ CK_RV SoftHSM::SymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 				return CKR_ARGUMENTS_BAD;
 			}
 			iv.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
-			memcpy(&iv[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pNonce, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+			memcpy(&iv[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->nonce, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
 			aad.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
 			if (CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen > 0)
-				memcpy(&aad[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pAAD, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
+				memcpy(&aad[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->aad, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
 			tagBytes = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulMACLen;
 			counterBits = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulDataLen;
 			if (tagBytes < 4 || tagBytes > 16 || tagBytes % 2 != 0)
@@ -2912,7 +2890,7 @@ CK_RV SoftHSM::AsymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -3141,7 +3119,7 @@ static CK_RV AsymEncrypt(Session* session, CK_BYTE_PTR pData, CK_ULONG ulDataLen
 	AsymMech::Type mechanism = session->getMechanism();
 	MechanismParam* mechanismParam = session->getMechanismParam();
 	PublicKey* publicKey = session->getPublicKey();
-		
+
 	if (asymCrypto == NULL || !session->getAllowSinglePartOp() || publicKey == NULL)
 	{
 		session->resetOp();
@@ -3203,7 +3181,7 @@ CK_RV SoftHSM::C_Encrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -3314,7 +3292,7 @@ CK_RV SoftHSM::C_EncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -3424,7 +3402,7 @@ CK_RV SoftHSM::C_EncryptFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncrypted
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -3454,7 +3432,7 @@ CK_RV SoftHSM::SymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -3695,10 +3673,10 @@ CK_RV SoftHSM::SymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 				return CKR_ARGUMENTS_BAD;
 			}
 			iv.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
-			memcpy(&iv[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pNonce, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
+			memcpy(&iv[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->nonce, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulNonceLen);
 			aad.resize(CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
 			if (CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen > 0)
-				memcpy(&aad[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->pAAD, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
+				memcpy(&aad[0], CK_CCM_PARAMS_PTR(pMechanism->pParameter)->aad, CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulAADLen);
 			tagBytes = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulMACLen;
 			counterBits = CK_CCM_PARAMS_PTR(pMechanism->pParameter)->ulDataLen;
 			if (tagBytes < 4 || tagBytes > 16 || tagBytes % 2 != 0)
@@ -3749,7 +3727,7 @@ CK_RV SoftHSM::AsymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -4047,7 +4025,7 @@ CK_RV SoftHSM::C_Decrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedData,
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -4161,7 +4139,7 @@ CK_RV SoftHSM::C_DecryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncrypte
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -4270,7 +4248,7 @@ CK_RV SoftHSM::C_DecryptFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -4300,7 +4278,7 @@ CK_RV SoftHSM::C_DigestInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -4381,7 +4359,7 @@ CK_RV SoftHSM::C_Digest(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pulDigestLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -4449,7 +4427,7 @@ CK_RV SoftHSM::C_DigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pPart == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -4481,7 +4459,7 @@ CK_RV SoftHSM::C_DigestKey(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -4560,7 +4538,7 @@ CK_RV SoftHSM::C_DigestFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDigest, CK
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pulDigestLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -4647,7 +4625,7 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -4906,7 +4884,7 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -5967,9 +5945,9 @@ CK_RV SoftHSM::C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ul
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
-	
+
 	// Get the session
 	Session* session = (Session*)handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
@@ -6055,7 +6033,7 @@ CK_RV SoftHSM::C_SignUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_UL
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pPart == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -6185,7 +6163,7 @@ CK_RV SoftHSM::C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature, C
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pulSignatureLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -6213,7 +6191,7 @@ CK_RV SoftHSM::C_SignRecoverInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR /*
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -6233,7 +6211,7 @@ CK_RV SoftHSM::C_SignRecover(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pData*/, 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -6250,7 +6228,7 @@ CK_RV SoftHSM::MacVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -6440,7 +6418,7 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -7338,10 +7316,10 @@ CK_RV SoftHSM::C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
-	
+
 	// Get the session
 	Session* session = (Session*)handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
@@ -7423,7 +7401,7 @@ CK_RV SoftHSM::C_VerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pPart == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -7523,7 +7501,7 @@ CK_RV SoftHSM::C_VerifyFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature,
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pSignature == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -7551,7 +7529,7 @@ CK_RV SoftHSM::C_VerifyRecoverInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR 
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -7571,7 +7549,7 @@ CK_RV SoftHSM::C_VerifyRecover(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pSignat
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -7588,7 +7566,7 @@ CK_RV SoftHSM::C_DigestEncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*p
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -7605,7 +7583,7 @@ CK_RV SoftHSM::C_DecryptDigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*p
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -7622,7 +7600,7 @@ CK_RV SoftHSM::C_SignEncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pPa
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -7639,7 +7617,7 @@ CK_RV SoftHSM::C_DecryptVerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*p
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -7656,7 +7634,7 @@ CK_RV SoftHSM::C_GenerateKey(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -7814,7 +7792,7 @@ CK_RV SoftHSM::C_GenerateKeyPair
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -8322,7 +8300,7 @@ CK_RV SoftHSM::WrapKeyAsym
 			cipher->recyclePublicKey(publicKey);
 			CryptoFactory::i()->recycleAsymmetricAlgorithm(cipher);
 			return rv;
-		}	
+		}
 		if (keydata.size() > modulus_length - 2 - (2 * hashLen))
 		{
 			delete rsaOaepMechanismParam;
@@ -8455,7 +8433,7 @@ CK_RV SoftHSM::C_WrapKey
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -8961,7 +8939,7 @@ CK_RV SoftHSM::UnwrapKeyAsym
 			CryptoFactory::i()->recycleAsymmetricAlgorithm(cipher);
 			return CKR_MECHANISM_INVALID;
 	}
-	
+
 	if (pMechanism->mechanism == CKM_RSA_PKCS_OAEP)
 	{
 		RSAOaepMechanismParam* rsaOaepMechanismParam = new RSAOaepMechanismParam;
@@ -9145,7 +9123,7 @@ CK_RV SoftHSM::C_UnwrapKey
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -9523,7 +9501,7 @@ CK_RV SoftHSM::C_DeriveKey
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -9710,7 +9688,7 @@ CK_RV SoftHSM::C_SeedRandom(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSeed, CK_UL
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pSeed == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -9737,7 +9715,7 @@ CK_RV SoftHSM::C_GenerateRandom(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pRandomD
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	if (pRandomData == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -9770,7 +9748,7 @@ CK_RV SoftHSM::C_GetFunctionStatus(CK_SESSION_HANDLE hSession)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -9787,7 +9765,7 @@ CK_RV SoftHSM::C_CancelFunction(CK_SESSION_HANDLE hSession)
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// Get the session
@@ -9806,7 +9784,7 @@ CK_RV SoftHSM::C_WaitForSlotEvent(CK_FLAGS flags, CK_SLOT_ID_PTR /*pSlot*/, CK_V
 
 	unsigned long mockReturnCode = this->mockAndSleep(__FUNCTION__);
 	if (mockReturnCode != CKR_OK) {
-		return mockErrorCode;
+		return mockReturnCode;
 	}
 
 	// SoftHSM slots don't change after it's initialised. With the
@@ -16485,7 +16463,7 @@ CK_RV SoftHSM::MechParamCheckRSAPKCSOAEP(CK_MECHANISM_PTR pMechanism)
 		return CKR_ARGUMENTS_BAD;
 	}
 	CK_RSA_PKCS_OAEP_PARAMS_PTR params = (CK_RSA_PKCS_OAEP_PARAMS_PTR)pMechanism->pParameter;
-	
+
 	if (params->source != CKZ_DATA_SPECIFIED)
 	{
 		ERROR_MSG("source must be CKZ_DATA_SPECIFIED");
@@ -16546,12 +16524,12 @@ CK_RV SoftHSM::BuildRSAOAEPParam(const CK_RSA_PKCS_OAEP_PARAMS *params,
 	{
 		ERROR_MSG("parameters is NULL for RSA OAEP encryption");
 	    return CKR_ARGUMENTS_BAD;
-	}  
+	}
 	if (params->source != CKZ_DATA_SPECIFIED)
 	{
 		ERROR_MSG("source must be CKZ_DATA_SPECIFIED");
 		return CKR_ARGUMENTS_BAD;
-	}  
+	}
 	if ((params->pSourceData == NULL) && (params->ulSourceDataLen != 0))
 	{
 		ERROR_MSG("pSourceData is NULL");
@@ -16643,7 +16621,7 @@ CK_RV SoftHSM::BuildRSAOAEPParam(const CK_RSA_PKCS_OAEP_PARAMS *params,
 	}
 	// copy label data to mechanismParam
 	mechanismParam->label = ByteString(reinterpret_cast<const unsigned char*>(params->pSourceData),params->ulSourceDataLen);
-	
+
 	return CKR_OK;
 }
 
@@ -16992,14 +16970,120 @@ CK_RV SoftHSM::generateSLHDSA(
 #endif
 
 unsigned long SoftHSM::mockAndSleep(const char* function) {
-	DEBUG_MSG("Evaluating mock for function: %s", function);
-	if (mockErrorSleepTime > 0 && (mockErrorFunction.compare(function) == 0)) {
-		DEBUG_MSG("%s is mocked, waiting %dms", function, mockErrorSleepTime);
-		std::this_thread::sleep_for(std::chrono::milliseconds(mockErrorSleepTime));
+	DEBUG_MSG("Evaluating mock for function: %s, isMockError: %d, mockOccurences: %lu, mockTimes: %lu", function, isMockError, mockOccurences, mockTimes);
+	// mockTimes = N mocks the first N calls; 0 (default) mocks every call
+	if (mockTimes == 0 || mockOccurences < mockTimes) {
+		if (mockErrorSleepTime > 0 && (mockErrorFunction.compare(function) == 0)) {
+			DEBUG_MSG("%s is mocked, waiting %lums", function, mockErrorSleepTime);
+			std::this_thread::sleep_for(std::chrono::milliseconds(mockErrorSleepTime));
+			if (!isMockError) {
+				mockOccurences++;
+				return CKR_OK;
+			}
+		}
+		if (isMockError && (mockErrorFunction.compare(function) == 0)) {
+			DEBUG_MSG("%s is mocked, returning %s", function, int_to_hex(mockErrorCode).c_str());
+			mockOccurences++;
+		    return mockErrorCode;
+	    }
 	}
-	if (isMockError && (mockErrorFunction.compare(function) == 0)) {
-		DEBUG_MSG("%s is mocked, returning %d", function, mockErrorCode);
-		return mockErrorCode;
-	}
+
+	DEBUG_MSG("%s is NOT mocked", function);
 	return CKR_OK;
+}
+
+void SoftHSM::resetMock()
+{
+	isMockError = false;
+	mockErrorCode = CKR_CRYPTOKI_NOT_INITIALIZED;
+	mockErrorSleepTime = 0UL;
+	mockErrorFunction.clear();
+	mockTimes = 0UL;
+	mockOccurences = 0UL;
+}
+
+// Parse an unsigned number, rejecting signs, trailing garbage and overflow
+static bool parseMockNumber(const std::string& value, int base, unsigned long& number)
+{
+	if (value.empty() || value[0] == '-' || value[0] == '+') return false;
+
+	char* end = NULL;
+	errno = 0;
+	number = strtoul(value.c_str(), &end, base);
+	return errno == 0 && end != value.c_str() && *end == '\0';
+}
+
+// Parse the mock configuration given in CK_C_INITIALIZE_ARGS.pReserved:
+//   "mockErrorFunction=<C_xxx>;mockErrorCode=<hex CKR>;mockErrorSleepTime=<ms>;mockTimes=<n>"
+// mockErrorFunction is mandatory. Anything else is rejected with
+// CKR_ARGUMENTS_BAD, as the specification requires for a non-NULL pReserved.
+CK_RV SoftHSM::parseMockParameters(const char* parameters)
+{
+	const auto entries(utils::split(std::string(parameters), ';', utils::SPLIT_TRIMMED | utils::SPLIT_NO_EMPTY));
+	for (const std::string& entry : entries)
+	{
+		const auto parts(utils::split(entry, '=', utils::SPLIT_TRIMMED));
+		if (parts.size() != 2 || parts[0].empty() || parts[1].empty())
+		{
+			ERROR_MSG("Invalid mock parameter '%s', expected name=value", entry.c_str());
+			resetMock();
+			return CKR_ARGUMENTS_BAD;
+		}
+
+		const std::string& name = parts[0];
+		const std::string& value = parts[1];
+		bool valid = true;
+		if (name == "mockErrorFunction")
+		{
+			mockErrorFunction = value;
+		}
+		else if (name == "mockErrorCode")
+		{
+			valid = parseMockNumber(value, 16, mockErrorCode);
+			isMockError = valid;
+		}
+		else if (name == "mockErrorSleepTime")
+		{
+			valid = parseMockNumber(value, 10, mockErrorSleepTime);
+		}
+		else if (name == "mockTimes")
+		{
+			valid = parseMockNumber(value, 10, mockTimes);
+		}
+		else
+		{
+			ERROR_MSG("Unknown mock parameter '%s'", name.c_str());
+			resetMock();
+			return CKR_ARGUMENTS_BAD;
+		}
+
+		if (!valid)
+		{
+			ERROR_MSG("Invalid value '%s' for mock parameter '%s'", value.c_str(), name.c_str());
+			resetMock();
+			return CKR_ARGUMENTS_BAD;
+		}
+	}
+
+	if (mockErrorFunction.empty())
+	{
+		ERROR_MSG("pReserved must be set to NULL_PTR or to a mock configuration with mockErrorFunction");
+		resetMock();
+		return CKR_ARGUMENTS_BAD;
+	}
+
+	DEBUG_MSG("Mocking %s: errorCode=%s (enabled: %d), sleepTime=%lums, times=%lu",
+		mockErrorFunction.c_str(), int_to_hex(mockErrorCode).c_str(), isMockError, mockErrorSleepTime, mockTimes);
+	return CKR_OK;
+}
+
+template< typename T > std::string SoftHSM::int_to_hex( T i )
+{
+  std::stringstream stream;
+  stream << "0x"
+         << std::setfill('0')
+		 << std::setw(sizeof(T))
+         << std::hex
+		 << i;
+  return stream.str();
 }

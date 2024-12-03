@@ -236,6 +236,8 @@ private:
 	unsigned long mockErrorCode;
 	unsigned long mockErrorSleepTime;
 	std::string mockErrorFunction;
+	unsigned long mockTimes;
+	unsigned long mockOccurences;
 
 	SessionObjectStore* sessionObjectStore;
 	ObjectStore* objectStore;
@@ -614,5 +616,8 @@ private:
 	void prepareSupportedMechanisms(std::map<std::string, CK_MECHANISM_TYPE> &t);
 	bool detectFork(void);
 	unsigned long mockAndSleep(const char* function);
+	void resetMock();
+	CK_RV parseMockParameters(const char* parameters);
+	template< typename T > std::string int_to_hex( T i );
 };
 

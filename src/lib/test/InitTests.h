@@ -46,6 +46,7 @@ class InitTests : public TestsNoPINInitBase
 	CPPUNIT_TEST(testInit5);
 	CPPUNIT_TEST(testInit6);
 	CPPUNIT_TEST(testFinal);
+	CPPUNIT_TEST(testMockParameters);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -56,6 +57,7 @@ public:
 	void testInit5();
 	void testInit6();
 	void testFinal();
+	void testMockParameters();
 
 	virtual void setUp();
 	virtual void tearDown();
