@@ -85,3 +85,4 @@ src/lib/test/softhsm2-negative-mech.conf
 src/lib/test/softhsm2.conf
 src/lib/test/tokens
 src/bin/util/test/tokens
+/.idea/
