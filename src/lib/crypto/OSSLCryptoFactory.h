@@ -86,7 +86,7 @@ private:
 	OSSLCryptoFactory();
 
 	// The one-and-only instance
-#ifdef HAVE_CXX11
+#ifdef HAVE_CXX14
 	static std::unique_ptr<OSSLCryptoFactory> instance;
 #else
 	static std::auto_ptr<OSSLCryptoFactory> instance;
