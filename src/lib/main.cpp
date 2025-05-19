@@ -125,6 +125,172 @@ static CK_FUNCTION_LIST functionList =
 	C_WaitForSlotEvent
 };
 
+static CK_FUNCTION_LIST_3_0 function30List =
+{
+	// Version information
+	{ 3, 0 },
+	// Function pointers
+	C_Initialize,
+	C_Finalize,
+	C_GetInfo,
+	C_GetFunctionList,
+	C_GetSlotList,
+	C_GetSlotInfo,
+	C_GetTokenInfo,
+	C_GetMechanismList,
+	C_GetMechanismInfo,
+	C_InitToken,
+	C_InitPIN,
+	C_SetPIN,
+	C_OpenSession,
+	C_CloseSession,
+	C_CloseAllSessions,
+	C_GetSessionInfo,
+	C_GetOperationState,
+	C_SetOperationState,
+	C_Login,
+	C_Logout,
+	C_CreateObject,
+	C_CopyObject,
+	C_DestroyObject,
+	C_GetObjectSize,
+	C_GetAttributeValue,
+	C_SetAttributeValue,
+	C_FindObjectsInit,
+	C_FindObjects,
+	C_FindObjectsFinal,
+	C_EncryptInit,
+	C_Encrypt,
+	C_EncryptUpdate,
+	C_EncryptFinal,
+	C_DecryptInit,
+	C_Decrypt,
+	C_DecryptUpdate,
+	C_DecryptFinal,
+	C_DigestInit,
+	C_Digest,
+	C_DigestUpdate,
+	C_DigestKey,
+	C_DigestFinal,
+	C_SignInit,
+	C_Sign,
+	C_SignUpdate,
+	C_SignFinal,
+	C_SignRecoverInit,
+	C_SignRecover,
+	C_VerifyInit,
+	C_Verify,
+	C_VerifyUpdate,
+	C_VerifyFinal,
+	C_VerifyRecoverInit,
+	C_VerifyRecover,
+	C_DigestEncryptUpdate,
+	C_DecryptDigestUpdate,
+	C_SignEncryptUpdate,
+	C_DecryptVerifyUpdate,
+	C_GenerateKey,
+	C_GenerateKeyPair,
+	C_WrapKey,
+	C_UnwrapKey,
+	C_DeriveKey,
+	C_SeedRandom,
+	C_GenerateRandom,
+	C_GetFunctionStatus,
+	C_CancelFunction,
+	C_WaitForSlotEvent,
+	C_GetInterfaceList,
+	C_GetInterface,
+	C_LoginUser
+};
+
+static CK_FUNCTION_LIST_3_2 function32List =
+{
+	// Version information
+	{ 3, 2 },
+	// Function pointers
+	C_Initialize,
+	C_Finalize,
+	C_GetInfo,
+	C_GetFunctionList,
+	C_GetSlotList,
+	C_GetSlotInfo,
+	C_GetTokenInfo,
+	C_GetMechanismList,
+	C_GetMechanismInfo,
+	C_InitToken,
+	C_InitPIN,
+	C_SetPIN,
+	C_OpenSession,
+	C_CloseSession,
+	C_CloseAllSessions,
+	C_GetSessionInfo,
+	C_GetOperationState,
+	C_SetOperationState,
+	C_Login,
+	C_Logout,
+	C_CreateObject,
+	C_CopyObject,
+	C_DestroyObject,
+	C_GetObjectSize,
+	C_GetAttributeValue,
+	C_SetAttributeValue,
+	C_FindObjectsInit,
+	C_FindObjects,
+	C_FindObjectsFinal,
+	C_EncryptInit,
+	C_Encrypt,
+	C_EncryptUpdate,
+	C_EncryptFinal,
+	C_DecryptInit,
+	C_Decrypt,
+	C_DecryptUpdate,
+	C_DecryptFinal,
+	C_DigestInit,
+	C_Digest,
+	C_DigestUpdate,
+	C_DigestKey,
+	C_DigestFinal,
+	C_SignInit,
+	C_Sign,
+	C_SignUpdate,
+	C_SignFinal,
+	C_SignRecoverInit,
+	C_SignRecover,
+	C_VerifyInit,
+	C_Verify,
+	C_VerifyUpdate,
+	C_VerifyFinal,
+	C_VerifyRecoverInit,
+	C_VerifyRecover,
+	C_DigestEncryptUpdate,
+	C_DecryptDigestUpdate,
+	C_SignEncryptUpdate,
+	C_DecryptVerifyUpdate,
+	C_GenerateKey,
+	C_GenerateKeyPair,
+	C_WrapKey,
+	C_UnwrapKey,
+	C_DeriveKey,
+	C_SeedRandom,
+	C_GenerateRandom,
+	CI_InternalGenerateRandom,
+	C_GetFunctionStatus,
+	C_CancelFunction,
+	C_WaitForSlotEvent,
+	C_EncapsulateKey,
+	C_DecapsulateKey,
+	C_GetInterfaceList,
+	C_GetInterface,
+	C_LoginUser
+};
+
+static CK_INTERFACE interfaceList[] = {
+	{ (CK_UTF8CHAR_PTR)"PKCS 11", &function32List, CKF_INTERFACE_FORK_SAFE }
+};
+
+static unsigned long INTERFACE_COUNT = 1;
+
+
 // PKCS #11 initialisation function
 PKCS_API CK_RV C_Initialize(CK_VOID_PTR pInitArgs)
 {
@@ -1140,6 +1306,21 @@ PKCS_API CK_RV C_GenerateRandom(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pRandomD
 	return CKR_FUNCTION_FAILED;
 }
 
+// Generate the specified amount of random data, Proteccio proprietary function
+PKCS_API CK_RV CI_InternalGenerateRandom(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pRandomData, CK_ULONG ulRandomLen)
+{
+	try
+	{
+		return SoftHSM::i()->C_GenerateRandom(hSession, pRandomData, ulRandomLen);
+	}
+	catch (...)
+	{
+		FatalException();
+	}
+
+	return CKR_FUNCTION_FAILED;
+}
+
 // Legacy function
 PKCS_API CK_RV C_GetFunctionStatus(CK_SESSION_HANDLE hSession)
 {
@@ -1185,3 +1366,119 @@ PKCS_API CK_RV C_WaitForSlotEvent(CK_FLAGS flags, CK_SLOT_ID_PTR pSlot, CK_VOID_
 	return CKR_FUNCTION_FAILED;
 }
 
+// Return the list of PKCS #11 functions
+PKCS_API CK_RV C_GetInterfaceList(CK_INTERFACE_PTR pInterfaceList, CK_ULONG_PTR pulCount)
+{
+	try
+	{
+		CK_ULONG count = *pulCount;
+		*pulCount = INTERFACE_COUNT;
+		if (pInterfaceList == NULL) {
+			return CKR_OK;
+		}
+		if (count < INTERFACE_COUNT) {
+			return CKR_BUFFER_TOO_SMALL;
+		}
+		memcpy(pInterfaceList, interfaceList, sizeof(interfaceList));
+		return CKR_OK;
+	}
+	catch (...)
+	{
+		FatalException();
+	}
+
+	return CKR_FUNCTION_FAILED;
+}
+
+PKCS_API CK_RV C_GetInterface(CK_UTF8CHAR_PTR pInterfaceName, CK_VERSION_PTR pVersion, CK_INTERFACE_PTR_PTR  ppInterface, CK_FLAGS flags)
+{
+	try
+	{
+		unsigned long i;
+    	for (i = 0; i < INTERFACE_COUNT; i++) {
+			CK_INTERFACE_PTR interface = &interfaceList[i];
+			if (pInterfaceName && strcmp((char *)pInterfaceName, (char *)interface->pInterfaceName) != 0) {
+				continue;
+			}
+			if (pVersion && memcmp(pVersion, (CK_VERSION *)interface->pFunctionList, sizeof(CK_VERSION)) != 0) {
+				continue;
+			}
+			if (flags & ((interface->flags & flags) != flags)) {
+				continue;
+			}
+			*ppInterface = interface;
+			return CKR_OK;
+		}
+    	return CKR_ARGUMENTS_BAD;
+	}
+	catch (...)
+	{
+		FatalException();
+	}
+
+	return CKR_FUNCTION_FAILED;
+}
+
+PKCS_API CK_RV C_LoginUser(CK_SESSION_HANDLE hSession, CK_USER_TYPE userType,
+             CK_CHAR_PTR pPin, CK_ULONG ulPinLen, CK_UTF8CHAR_PTR pUsername,
+             CK_ULONG ulUsernameLen)
+{
+	try
+	{
+		return SoftHSM::i()->C_Login(hSession, userType, pPin, ulPinLen);
+	}
+	catch (...)
+	{
+		FatalException();
+	}
+
+	return CKR_FUNCTION_FAILED;
+}
+
+PKCS_API CK_RV C_EncapsulateKey
+(
+  CK_SESSION_HANDLE    hSession,        /* the session's handle */
+  CK_MECHANISM_PTR     pMechanism,      /* the encapsulation mechanism */
+  CK_OBJECT_HANDLE     hPublicKey,      /* the public key */
+  CK_ATTRIBUTE_PTR     pTemplate,       /* the new key template */
+  CK_ULONG             ulAttributeCount, /* the template length */
+  CK_OBJECT_HANDLE_PTR phKey,            /* the key which has been encapsulated */
+  CK_BYTE_PTR          pCipherText,      /* the key encapsulated */
+  CK_ULONG_PTR         pulCipherTextLen  /* the key encapsulated size */
+)
+{
+	try
+	{
+		return SoftHSM::i()->C_EncapsulateKey(hSession, pMechanism, hPublicKey, pTemplate, ulAttributeCount, phKey, pCipherText, pulCipherTextLen);
+	}
+	catch (...)
+	{
+		FatalException();
+	}
+
+	return CKR_FUNCTION_FAILED;
+}
+
+PKCS_API CK_RV C_DecapsulateKey
+(
+  CK_SESSION_HANDLE hSession,         /* the session's handle */
+  CK_MECHANISM_PTR  pMechanism,       /* the decapsulation mechanism */
+  CK_OBJECT_HANDLE  hPrivateKey,      /* the private key */
+  CK_BYTE_PTR       pCipherText,      /* the encapsulated key */
+  CK_ULONG          ulCipherTextLen,  /* the encapsulated key size */
+  CK_ATTRIBUTE_PTR  pTemplate,        /* the decapsulated key template */
+  CK_ULONG          ulAttributeCount, /* the decapsulated key template length */  
+  CK_OBJECT_HANDLE_PTR phKey            /* the decapsulated key  */
+)
+{
+	try
+	{
+		return SoftHSM::i()->C_DecapsulateKey(hSession, pMechanism, hPrivateKey, pCipherText, ulCipherTextLen, pTemplate, ulAttributeCount, phKey);
+	}
+	catch (...)
+	{
+		FatalException();
+	}
+
+	return CKR_FUNCTION_FAILED;
+}

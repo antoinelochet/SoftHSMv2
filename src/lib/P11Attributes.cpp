@@ -2625,7 +2625,6 @@ bool P11AttrSeed::setDefault()
 CK_RV P11AttrSeed::updateAttr(Token *token, bool isPrivate, CK_VOID_PTR pValue, CK_ULONG ulValueLen, int op)
 {
 	ByteString plaintext((unsigned char*)pValue, ulValueLen);
-	DEBUG_MSG("P11AttrSeed plaintext: %s", plaintext.hex_str().c_str());
 	ByteString value;
 
 	// Encrypt
@@ -2646,6 +2645,82 @@ CK_RV P11AttrSeed::updateAttr(Token *token, bool isPrivate, CK_VOID_PTR pValue, 
 	// Store data
 
 	osobject->setAttribute(type, value);
+
+	return CKR_OK;
+}
+
+/*****************************************
+ * CKA_ENCAPSULATE
+ *****************************************/
+
+// Set default value
+bool P11AttrEncapsulate::setDefault()
+{
+	OSAttribute attr(true);
+	return osobject->setAttribute(type, attr);
+}
+
+// Update the value if allowed
+CK_RV P11AttrEncapsulate::updateAttr(Token* /*token*/, bool /*isPrivate*/, CK_VOID_PTR pValue, CK_ULONG ulValueLen, int /*op*/)
+{
+	OSAttribute attrTrue(true);
+	OSAttribute attrFalse(false);
+
+	// Attribute specific checks
+
+	if (ulValueLen !=sizeof(CK_BBOOL))
+	{
+		return CKR_ATTRIBUTE_VALUE_INVALID;
+	}
+
+	// Store data
+
+	if (*(CK_BBOOL*)pValue == CK_FALSE)
+	{
+		osobject->setAttribute(type, attrFalse);
+	}
+	else
+	{
+		osobject->setAttribute(type, attrTrue);
+	}
+
+	return CKR_OK;
+}
+
+/*****************************************
+ * CKA_DECAPSULATE
+ *****************************************/
+
+// Set default value
+bool P11AttrDecapsulate::setDefault()
+{
+	OSAttribute attr(true);
+	return osobject->setAttribute(type, attr);
+}
+
+// Update the value if allowed
+CK_RV P11AttrDecapsulate::updateAttr(Token* /*token*/, bool /*isPrivate*/, CK_VOID_PTR pValue, CK_ULONG ulValueLen, int /*op*/)
+{
+	OSAttribute attrTrue(true);
+	OSAttribute attrFalse(false);
+
+	// Attribute specific checks
+
+	if (ulValueLen !=sizeof(CK_BBOOL))
+	{
+		return CKR_ATTRIBUTE_VALUE_INVALID;
+	}
+
+	// Store data
+
+	if (*(CK_BBOOL*)pValue == CK_FALSE)
+	{
+		osobject->setAttribute(type, attrFalse);
+	}
+	else
+	{
+		osobject->setAttribute(type, attrTrue);
+	}
 
 	return CKR_OK;
 }
