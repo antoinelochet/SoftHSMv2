@@ -2288,7 +2288,7 @@ bool P11AttrEcPoint::setDefault()
 // Set default value
 bool P11AttrParameterSet::setDefault()
 {
-	OSAttribute attr(ByteString(""));
+	OSAttribute attr((unsigned long)0);
 	return osobject->setAttribute(type, attr);
 }
 
@@ -2625,7 +2625,6 @@ bool P11AttrSeed::setDefault()
 CK_RV P11AttrSeed::updateAttr(Token *token, bool isPrivate, CK_VOID_PTR pValue, CK_ULONG ulValueLen, int /*op*/)
 {
 	ByteString plaintext((unsigned char*)pValue, ulValueLen);
-	DEBUG_MSG("P11AttrSeed plaintext: %s", plaintext.hex_str().c_str());
 	ByteString value;
 
 	// Encrypt
