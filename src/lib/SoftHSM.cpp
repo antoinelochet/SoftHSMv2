@@ -7059,6 +7059,7 @@ CK_RV SoftHSM::C_GenerateKeyPair
 									 ispublicKeyToken, ispublicKeyPrivate, isprivateKeyToken, isprivateKeyPrivate);
 	}
 
+#ifdef WITH_ML_DSA
 	if (pMechanism->mechanism == CKM_ML_DSA_KEY_PAIR_GEN)
 	{
 			return this->generateMLDSA(hSession,
@@ -7067,7 +7068,7 @@ CK_RV SoftHSM::C_GenerateKeyPair
 									 phPublicKey, phPrivateKey,
 									 ispublicKeyToken, ispublicKeyPrivate, isprivateKeyToken, isprivateKeyPrivate);
 	}
-
+#endif
 	return CKR_GENERAL_ERROR;
 }
 
@@ -10887,6 +10888,7 @@ CK_RV SoftHSM::generateED
 	return rv;
 }
 
+#ifdef WITH_ML_DSA
 // Generate an MLDSA key pair
 CK_RV SoftHSM::generateMLDSA
 (CK_SESSION_HANDLE hSession,
@@ -11145,6 +11147,7 @@ CK_RV SoftHSM::generateMLDSA
 
 	return rv;
 }
+#endif
 
 // Generate a DH key pair
 CK_RV SoftHSM::generateDH
