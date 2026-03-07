@@ -11,7 +11,8 @@
 #ifdef WITH_ML_DSA
 #include "MLDSAPrivateKey.h"
 #include "MLDSAPublicKey.h"
-#include "AsymmetricAlgorithm.h"
+#include "MLDSAParameters.h"
+#include "MLDSAMechanismParam.h"
 #include "CryptoFactory.h"
 #include "ByteString.h"
 #include "Token.h"
@@ -20,6 +21,7 @@
 class MLDSAUtil
 {
 public:
+	MLDSAUtil() = delete;
 	static CK_RV getMLDSAPrivateKey(MLDSAPrivateKey* privateKey, Token* token, OSObject* key);
 	static CK_RV getMLDSAPublicKey(MLDSAPublicKey* publicKey, Token* token, OSObject* key);
 
@@ -29,5 +31,5 @@ public:
 
 };
 
-#endif // WITH_ML_DSA
+#endif // !WITH_ML_DSA
 #endif // !_SOFTHSM_V2_MLDSAUTIL_H

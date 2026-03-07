@@ -50,7 +50,7 @@ public:
 	virtual bool PKCS8Decode(const ByteString& ber);
 
 	// Set from OpenSSL representation
-	virtual void setFromOSSL(const EVP_PKEY* inMLDSAKEY);
+	virtual bool setFromOSSL(const EVP_PKEY* inMLDSAKEY);
 
 	// Retrieve the OpenSSL representation of the key
 	EVP_PKEY* getOSSLKey();
@@ -64,6 +64,6 @@ private:
 
 };
 
-#endif // WITH_ML_DSA
+#endif // !WITH_ML_DSA
 #endif // !_SOFTHSM_V2_OSSLMLDSAPRIVATEKEY_H
 

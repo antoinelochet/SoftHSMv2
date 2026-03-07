@@ -10,6 +10,8 @@
 #include "OSSLMLDSAPrivateKey.h"
 #include "MLDSAParameters.h"
 #include "OSSLUtil.h"
+#include <cstring>
+#include <utility>
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
 #include <openssl/x509.h>
@@ -59,16 +61,15 @@ OSSLMLDSAPrivateKey& OSSLMLDSAPrivateKey::operator=(OSSLMLDSAPrivateKey&& other)
 const char* OSSLMLDSAPrivateKey::type = "OpenSSL ML-DSA Private Key";
 
 // Set from OpenSSL representation
-void OSSLMLDSAPrivateKey::setFromOSSL(const EVP_PKEY* inMLDSAKEY)
+bool OSSLMLDSAPrivateKey::setFromOSSL(const EVP_PKEY* inMLDSAKEY)
 {
+	ByteString localSeed;
 	uint8_t seed[32];
 	size_t seed_len;
 	int rv = EVP_PKEY_get_octet_string_param(inMLDSAKEY, OSSL_PKEY_PARAM_ML_DSA_SEED,
 								seed, sizeof(seed), &seed_len);
 	if(rv && seed_len == 32) {
-		// seed is not mandatory for OSSL key reconstruction
-		ByteString seedBS = ByteString(seed, seed_len);
-		setSeed(seedBS);
+		localSeed = ByteString(seed, seed_len);
 	}
 	
 	// let's use max priv length
@@ -78,12 +79,27 @@ void OSSLMLDSAPrivateKey::setFromOSSL(const EVP_PKEY* inMLDSAKEY)
 									priv, sizeof(priv), &priv_len);
 	if(!rv) {
 		ERROR_MSG("Could not get private key, rv: %d", rv);
-		return;
+		memset(seed, 0, sizeof(seed));
+		memset(priv, 0, sizeof(priv));
+		return false;
 	}
 
-	ByteString valueBS = ByteString(priv, priv_len);
+	if (priv_len != MLDSAParameters::ML_DSA_44_PRIV_LENGTH &&
+	    priv_len != MLDSAParameters::ML_DSA_65_PRIV_LENGTH &&
+	    priv_len != MLDSAParameters::ML_DSA_87_PRIV_LENGTH)
+	{
+		ERROR_MSG("Unsupported ML-DSA private key length: %zu", priv_len);
+		memset(seed, 0, sizeof(seed));
+		memset(priv, 0, sizeof(priv));
+		return false;
+	}
 
-	setValue(valueBS);
+	// Commit state atomically after successful extraction
+	setSeed(localSeed);
+	setValue(ByteString(priv, priv_len));
+	memset(seed, 0, sizeof(seed));
+	memset(priv, 0, sizeof(priv));
+	return true;
 }
 
 // Check if the key is of the given type
@@ -145,9 +161,9 @@ bool OSSLMLDSAPrivateKey::PKCS8Decode(const ByteString& ber)
 	EVP_PKEY* localPKey = EVP_PKCS82PKEY(p8);
 	PKCS8_PRIV_KEY_INFO_free(p8);
 	if (localPKey == NULL) return false;
-	setFromOSSL(localPKey);
+	const bool ok = setFromOSSL(localPKey);
 	EVP_PKEY_free(localPKey);
-	return true;
+	return ok;
 }
 
 // Retrieve the OpenSSL representation of the key
@@ -193,13 +209,13 @@ void OSSLMLDSAPrivateKey::createOSSLKey()
 		return;
 	}
 	int rv = EVP_PKEY_fromdata_init(ctx);
-	if (!rv) {
+	if (rv <= 0) {
 		ERROR_MSG("Could not EVP_PKEY_fromdata_init:%d", rv);
 		EVP_PKEY_CTX_free(ctx);
 		return;
 	}
 	rv = EVP_PKEY_fromdata(ctx, &pkey, selection, params);
-	if (!rv) {
+	if (rv <= 0) {
 		ERROR_MSG("Could not EVP_PKEY_fromdata:%d", rv);
 		EVP_PKEY_CTX_free(ctx);
 		return;

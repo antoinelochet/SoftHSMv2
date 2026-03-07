@@ -54,6 +54,6 @@ private:
 	void createOSSLKey();
 };
 
-#endif // WITH_ML_DSA
+#endif // !WITH_ML_DSA
 #endif // !_SOFTHSM_V2_OSSLMLDSAPUBLICKEY_H
 

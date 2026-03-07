@@ -30,10 +30,11 @@ libsofthsm_crypto_la_SOURCES =	AESKey.cpp \
 				GOSTPrivateKey.cpp \
 				HashAlgorithm.cpp \
 				MacAlgorithm.cpp \
+				MLDSAMechanismParam.cpp \
 				MLDSAParameters.cpp \
-                MLDSAPrivateKey.cpp \
-            	MLDSAPublicKey.cpp \
-            	MLDSAUtil.cpp \
+				MLDSAPrivateKey.cpp \
+				MLDSAPublicKey.cpp \
+				MLDSAUtil.cpp \
 				RSAParameters.cpp \
 				RSAPrivateKey.cpp \
 				RSAPublicKey.cpp \

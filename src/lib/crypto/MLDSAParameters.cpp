@@ -7,7 +7,6 @@
 #include "config.h"
 #include "log.h"
 #include "MLDSAParameters.h"
-#include "OSSLUtil.h"
 #include <string.h>
 
 // The type
@@ -39,19 +38,20 @@ ByteString MLDSAParameters::serialise() const
 
 bool MLDSAParameters::deserialise(ByteString& serialised)
 {
-
-	if (serialised.size() == 0)
+	if (serialised.size() != 8)
 	{
 		return false;
 	}
 
 	unsigned long parameter = serialised.long_val();
-	const char* name = OSSL::mldsaParameterSet2Name(parameter);
-	if (name == NULL) {
+	if (parameter != ML_DSA_44_PARAMETER_SET && 
+		parameter != ML_DSA_65_PARAMETER_SET && 
+		parameter != ML_DSA_87_PARAMETER_SET) 
+	{
 		return false;
 	}
 
-	setParameterSet(serialised.long_val());
+	setParameterSet(parameter);
 
 	return true;
 }

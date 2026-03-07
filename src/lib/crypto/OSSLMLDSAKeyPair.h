@@ -38,5 +38,5 @@ private:
 	OSSLMLDSAPrivateKey privKey;
 };
 
-#endif // WITH_ML_DSA
+#endif // !WITH_ML_DSA
 #endif // !_SOFTHSM_V2_OSSLMLDSAKEYPAIR_H
