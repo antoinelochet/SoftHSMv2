@@ -1,0 +1,70 @@
+/*
+ * Copyright (c) 2010 SURFnet bv
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+ * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*****************************************************************************
+ OSSLSLHDSAKeyPair.h
+
+ OpenSSL SLH-DSA key-pair class
+ *****************************************************************************/
+
+#ifndef _SOFTHSM_V2_OSSLSLHDSAKEYPAIR_H
+#define _SOFTHSM_V2_OSSLSLHDSAKEYPAIR_H
+
+#include "config.h"
+#ifdef WITH_SLH_DSA
+#include "AsymmetricKeyPair.h"
+#include "OSSLSLHDSAPublicKey.h"
+#include "OSSLSLHDSAPrivateKey.h"
+
+class OSSLSLHDSAKeyPair : public AsymmetricKeyPair
+{
+public:
+	/** \brief Set the public key */
+	void setPublicKey(const OSSLSLHDSAPublicKey& publicKey);
+
+	/** \brief Set the private key */
+	void setPrivateKey(const OSSLSLHDSAPrivateKey& privateKey);
+
+	/** \brief Return the public key */
+	virtual PublicKey* getPublicKey();
+	/** \brief Return the constant public key */
+	virtual const PublicKey* getConstPublicKey() const;
+
+	/** \brief Return the private key */
+	virtual PrivateKey* getPrivateKey();
+	/** \brief Return the constant private key */
+	virtual const PrivateKey* getConstPrivateKey() const;
+
+private:
+	/** \brief The public key */
+	OSSLSLHDSAPublicKey pubKey;
+
+	/** \brief The private key */
+	OSSLSLHDSAPrivateKey privKey;
+};
+
+#endif // WITH_SLH_DSA
+#endif // !_SOFTHSM_V2_OSSLSLHDSAKEYPAIR_H
