@@ -13,6 +13,7 @@ Some options (more can be found in CMakeLists.txt):
 	-DENABLE_EDDSA=ON		Enable support for EDDSA
 	-DENABLE_MLDSA=ON		Enable support for ML-DSA
 	-DENABLE_MLKEM=ON		Enable support for ML-KEM
+	-DENABLE_SLHDSA=ON		Enable support for SLH-DSA
 	-DWITH_MIGRATE=ON		Build migration tool
 	-DWITH_CRYPTO_BACKEND=openssl	Select crypto backend (openssl|botan)
 

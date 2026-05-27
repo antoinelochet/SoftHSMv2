@@ -157,6 +157,9 @@
 /* Compile with ML-KEM support */
 #cmakedefine WITH_ML_KEM @WITH_ML_KEM@
 
+/* Compile with SLH-DSA support */
+#cmakedefine WITH_SLH_DSA @WITH_SLH_DSA@
+
 /* Compile with FIPS 140-2 mode */
 #cmakedefine WITH_FIPS @WITH_FIPS@
 
