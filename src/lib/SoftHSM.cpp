@@ -75,6 +75,12 @@
 #include "MLKEMPrivateKey.h"
 #include "MLKEMUtil.h"
 #endif
+#ifdef WITH_SLH_DSA
+#include "SLHDSAParameters.h"
+#include "SLHDSAPrivateKey.h"
+#include "SLHDSAPublicKey.h"
+#include "SLHDSAUtil.h"
+#endif
 #include "cryptoki.h"
 #include "SoftHSM.h"
 #include "osmutex.h"
@@ -165,6 +171,10 @@ static CK_RV newP11Object(CK_OBJECT_CLASS objClass, CK_KEY_TYPE keyType, CK_CERT
 			else if (keyType == CKK_ML_KEM)
 				*p11object = new P11MLKEMPublicKeyObj();
 #endif
+#ifdef WITH_SLH_DSA
+			else if (keyType == CKK_SLH_DSA)
+				*p11object = new P11SLHDSAPublicKeyObj();
+#endif
 			else
 				return CKR_ATTRIBUTE_VALUE_INVALID;
 			break;
@@ -185,6 +195,10 @@ static CK_RV newP11Object(CK_OBJECT_CLASS objClass, CK_KEY_TYPE keyType, CK_CERT
 #ifdef WITH_ML_DSA
 			else if (keyType == CKK_ML_DSA)
 				*p11object = new P11MLDSAPrivateKeyObj();
+#endif
+#ifdef WITH_SLH_DSA
+			else if (keyType == CKK_SLH_DSA)
+				*p11object = new P11SLHDSAPrivateKeyObj();
 #endif
 #ifdef WITH_ML_KEM
 			else if (keyType == CKK_ML_KEM)
@@ -947,6 +961,10 @@ void SoftHSM::prepareSupportedMechanisms(std::map<std::string, CK_MECHANISM_TYPE
 	t["CKM_ML_KEM_KEY_PAIR_GEN"] = CKM_ML_KEM_KEY_PAIR_GEN;
 	t["CKM_ML_KEM"]			= CKM_ML_KEM;
 #endif
+#ifdef WITH_SLH_DSA
+	t["CKM_SLH_DSA_KEY_PAIR_GEN"] = CKM_SLH_DSA_KEY_PAIR_GEN;
+	t["CKM_SLH_DSA"]		= CKM_SLH_DSA;
+#endif
 	t["CKM_CONCATENATE_DATA_AND_BASE"] = CKM_CONCATENATE_DATA_AND_BASE;
 	t["CKM_CONCATENATE_BASE_AND_DATA"] = CKM_CONCATENATE_BASE_AND_DATA;
 	t["CKM_CONCATENATE_BASE_AND_KEY"] = CKM_CONCATENATE_BASE_AND_KEY;
@@ -1062,6 +1080,9 @@ CK_RV SoftHSM::C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_
 #endif
 #ifdef WITH_ML_KEM
     unsigned long mlkemMinSize = 0, mlkemMaxSize = 0;
+#endif
+#ifdef WITH_SLH_DSA
+	unsigned long slhdsaMinSize = 0, slhdsaMaxSize = 0;
 #endif
 
 	if (!isInitialised) return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -1189,6 +1210,13 @@ CK_RV SoftHSM::C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_
 		return CKR_GENERAL_ERROR;
 	}
 	CryptoFactory::i()->recycleAsymmetricAlgorithm(mlkem);
+#endif
+#ifdef WITH_SLH_DSA
+	AsymmetricAlgorithm* slhdsa = CryptoFactory::i()->getAsymmetricAlgorithm(AsymAlgo::SLHDSA);
+	if (slhdsa == NULL) return CKR_GENERAL_ERROR;
+	slhdsaMinSize = slhdsa->getMinKeySize();
+	slhdsaMaxSize = slhdsa->getMaxKeySize();
+	CryptoFactory::i()->recycleAsymmetricAlgorithm(slhdsa);
 #endif
 	pInfo->flags = 0;	// initialize flags
 	switch (type)
@@ -1496,6 +1524,18 @@ CK_RV SoftHSM::C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_
 		case CKM_ML_DSA:
 			pInfo->ulMinKeySize = mldsaMinSize;
 			pInfo->ulMaxKeySize = mldsaMaxSize;
+			pInfo->flags = CKF_SIGN | CKF_VERIFY;
+			break;
+#endif
+#ifdef WITH_SLH_DSA
+		case CKM_SLH_DSA_KEY_PAIR_GEN:
+			pInfo->ulMinKeySize = slhdsaMinSize;
+			pInfo->ulMaxKeySize = slhdsaMaxSize;
+			pInfo->flags = CKF_GENERATE_KEY_PAIR;
+			break;
+		case CKM_SLH_DSA:
+			pInfo->ulMinKeySize = slhdsaMinSize;
+			pInfo->ulMaxKeySize = slhdsaMaxSize;
 			pInfo->flags = CKF_SIGN | CKF_VERIFY;
 			break;
 #endif
@@ -4796,6 +4836,10 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 	bool isMLDSA = false;
 	MLDSAMechanismParam mldsaParam;
 #endif
+#ifdef WITH_SLH_DSA
+	bool isSLHDSA = false;
+	SLHDSAMechanismParam slhdsaParam;
+#endif
 	switch(pMechanism->mechanism) {
 		case CKM_RSA_PKCS:
 			mechanism = AsymMech::RSA_PKCS;
@@ -5106,6 +5150,48 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 			}
 			break;
 #endif
+#ifdef WITH_SLH_DSA
+		case CKM_SLH_DSA:
+			mechanism = AsymMech::SLHDSA;
+			bAllowMultiPartOp = true;
+			isSLHDSA = true;
+			if (pMechanism->pParameter == NULL_PTR)
+			{
+				if (pMechanism->ulParameterLen != 0)
+				{
+					ERROR_MSG("Invalid parameters");
+					return CKR_ARGUMENTS_BAD;
+				}
+			}
+			else
+			{
+				if (pMechanism->ulParameterLen != sizeof(CK_SIGN_ADDITIONAL_CONTEXT))
+				{
+					ERROR_MSG("Invalid parameters");
+					return CKR_ARGUMENTS_BAD;
+				}
+				CK_SIGN_ADDITIONAL_CONTEXT* ckSignAdditionalContext = (CK_SIGN_ADDITIONAL_CONTEXT*) pMechanism->pParameter;
+				CK_RV rv = SLHDSAUtil::setHedge(ckSignAdditionalContext->hedgeVariant, &slhdsaParam.hedgeType);
+				if (rv != CKR_OK) {
+					ERROR_MSG("Invalid parameters");
+					return CKR_ARGUMENTS_BAD;
+				}
+				if (ckSignAdditionalContext->ulContextLen > 0) {
+					if (ckSignAdditionalContext->pContext == NULL_PTR) {
+						ERROR_MSG("Invalid parameters");
+						return CKR_ARGUMENTS_BAD;
+					}
+					if (ckSignAdditionalContext->ulContextLen > 255) {
+						ERROR_MSG("Invalid parameters");
+						return CKR_ARGUMENTS_BAD;
+					}
+					slhdsaParam.additionalContext = ByteString(ckSignAdditionalContext->pContext, ckSignAdditionalContext->ulContextLen);
+					DEBUG_MSG("Sign SLHDSA additionalContextLen=%lu, hedgeType=%d", (unsigned long)slhdsaParam.additionalContext.size(), slhdsaParam.hedgeType);
+				}
+				mechanismParam = &slhdsaParam;
+			}
+			break;
+#endif
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -5221,6 +5307,30 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 		}
 
 		if (MLDSAUtil::getMLDSAPrivateKey((MLDSAPrivateKey*)privateKey, token, key) != CKR_OK)
+		{
+			asymCrypto->recyclePrivateKey(privateKey);
+			CryptoFactory::i()->recycleAsymmetricAlgorithm(asymCrypto);
+			return CKR_GENERAL_ERROR;
+		}
+	}
+#endif
+#ifdef WITH_SLH_DSA
+	else if (isSLHDSA)
+	{
+		if (keyType != CKK_SLH_DSA)
+			return CKR_KEY_TYPE_INCONSISTENT;
+
+		asymCrypto = CryptoFactory::i()->getAsymmetricAlgorithm(AsymAlgo::SLHDSA);
+		if (asymCrypto == NULL) return CKR_MECHANISM_INVALID;
+
+		privateKey = asymCrypto->newPrivateKey();
+		if (privateKey == NULL)
+		{
+			CryptoFactory::i()->recycleAsymmetricAlgorithm(asymCrypto);
+			return CKR_HOST_MEMORY;
+		}
+
+		if (SLHDSAUtil::getSLHDSAPrivateKey((SLHDSAPrivateKey*)privateKey, token, key) != CKR_OK)
 		{
 			asymCrypto->recyclePrivateKey(privateKey);
 			CryptoFactory::i()->recycleAsymmetricAlgorithm(asymCrypto);
@@ -5984,6 +6094,10 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	bool isMLDSA = false;
 	MLDSAMechanismParam mldsaParam;
 #endif
+#ifdef WITH_SLH_DSA
+	bool isSLHDSA = false;
+	SLHDSAMechanismParam slhdsaParam;
+#endif
 	switch(pMechanism->mechanism) {
 		case CKM_RSA_PKCS:
 			mechanism = AsymMech::RSA_PKCS;
@@ -6253,7 +6367,7 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 #ifdef WITH_ML_DSA
 		case CKM_ML_DSA:
 			mechanism = AsymMech::MLDSA;
-			bAllowMultiPartOp = false;
+			bAllowMultiPartOp = true;
 			isMLDSA = true;
 			if (pMechanism->pParameter == NULL_PTR)
 			{
@@ -6289,6 +6403,48 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 					DEBUG_MSG("Verify MLDSA additionalContextLen=%lu, hedgeType=%d", (unsigned long)mldsaParam.additionalContext.size(), mldsaParam.hedgeType);
 				}
 				mechanismParam = &mldsaParam;
+			}
+			break;
+#endif
+#ifdef WITH_SLH_DSA
+		case CKM_SLH_DSA:
+			mechanism = AsymMech::SLHDSA;
+			bAllowMultiPartOp = true;
+			isSLHDSA = true;
+			if (pMechanism->pParameter == NULL_PTR)
+			{
+				if (pMechanism->ulParameterLen != 0)
+				{
+					ERROR_MSG("Invalid parameters");
+					return CKR_ARGUMENTS_BAD;
+				}
+			}
+			else
+			{
+				if (pMechanism->ulParameterLen != sizeof(CK_SIGN_ADDITIONAL_CONTEXT))
+				{
+					ERROR_MSG("Invalid parameters");
+					return CKR_ARGUMENTS_BAD;
+				}
+				CK_SIGN_ADDITIONAL_CONTEXT* ckSignAdditionalContext = (CK_SIGN_ADDITIONAL_CONTEXT*) pMechanism->pParameter;
+				CK_RV rv = SLHDSAUtil::setHedge(ckSignAdditionalContext->hedgeVariant, &slhdsaParam.hedgeType);
+				if (rv != CKR_OK) {
+					ERROR_MSG("Invalid parameters");
+					return CKR_ARGUMENTS_BAD;
+				}
+				if (ckSignAdditionalContext->ulContextLen > 0) {
+					if (ckSignAdditionalContext->pContext == NULL_PTR) {
+						ERROR_MSG("Invalid parameters");
+						return CKR_ARGUMENTS_BAD;
+					}
+					if (ckSignAdditionalContext->ulContextLen > 255) {
+						ERROR_MSG("Invalid parameters");
+						return CKR_ARGUMENTS_BAD;
+					}
+					slhdsaParam.additionalContext = ByteString(ckSignAdditionalContext->pContext, ckSignAdditionalContext->ulContextLen);
+					DEBUG_MSG("Verify SLHDSA additionalContextLen=%lu, hedgeType=%d", (unsigned long)slhdsaParam.additionalContext.size(), slhdsaParam.hedgeType);
+				}
+				mechanismParam = &slhdsaParam;
 			}
 			break;
 #endif
@@ -6407,6 +6563,30 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 		}
 
 		if (MLDSAUtil::getMLDSAPublicKey((MLDSAPublicKey*)publicKey, token, key) != CKR_OK)
+		{
+			asymCrypto->recyclePublicKey(publicKey);
+			CryptoFactory::i()->recycleAsymmetricAlgorithm(asymCrypto);
+			return CKR_GENERAL_ERROR;
+		}
+	}
+#endif
+#ifdef WITH_SLH_DSA
+	else if (isSLHDSA)
+	{
+		if (keyType != CKK_SLH_DSA)
+			return CKR_KEY_TYPE_INCONSISTENT;
+
+		asymCrypto = CryptoFactory::i()->getAsymmetricAlgorithm(AsymAlgo::SLHDSA);
+		if (asymCrypto == NULL) return CKR_MECHANISM_INVALID;
+
+		publicKey = asymCrypto->newPublicKey();
+		if (publicKey == NULL)
+		{
+			CryptoFactory::i()->recycleAsymmetricAlgorithm(asymCrypto);
+			return CKR_HOST_MEMORY;
+		}
+
+		if (SLHDSAUtil::getSLHDSAPublicKey((SLHDSAPublicKey*)publicKey, token, key) != CKR_OK)
 		{
 			asymCrypto->recyclePublicKey(publicKey);
 			CryptoFactory::i()->recycleAsymmetricAlgorithm(asymCrypto);
@@ -7136,6 +7316,11 @@ CK_RV SoftHSM::C_GenerateKeyPair
 			keyType = CKK_ML_KEM;
 			break;
 #endif
+#ifdef WITH_SLH_DSA
+		case CKM_SLH_DSA_KEY_PAIR_GEN:
+			keyType = CKK_SLH_DSA;
+			break;
+#endif
 		default:
 			return CKR_MECHANISM_INVALID;
 	}
@@ -7167,6 +7352,8 @@ CK_RV SoftHSM::C_GenerateKeyPair
 		return CKR_TEMPLATE_INCONSISTENT;
 	if (pMechanism->mechanism == CKM_ML_KEM_KEY_PAIR_GEN && keyType != CKK_ML_KEM)
 		return CKR_TEMPLATE_INCONSISTENT;
+	if (pMechanism->mechanism == CKM_SLH_DSA_KEY_PAIR_GEN && keyType != CKK_SLH_DSA)
+		return CKR_TEMPLATE_INCONSISTENT;
 
 	// Extract information from the private key template that is needed to create the object.
 	CK_OBJECT_CLASS privateKeyClass = CKO_PRIVATE_KEY;
@@ -7193,6 +7380,8 @@ CK_RV SoftHSM::C_GenerateKeyPair
 	if (pMechanism->mechanism == CKM_ML_DSA_KEY_PAIR_GEN && keyType != CKK_ML_DSA)
 		return CKR_TEMPLATE_INCONSISTENT;
 	if (pMechanism->mechanism == CKM_ML_KEM_KEY_PAIR_GEN && keyType != CKK_ML_KEM)
+		return CKR_TEMPLATE_INCONSISTENT;
+	if (pMechanism->mechanism == CKM_SLH_DSA_KEY_PAIR_GEN && keyType != CKK_SLH_DSA)
 		return CKR_TEMPLATE_INCONSISTENT;
 
 	// Check user credentials
@@ -7271,6 +7460,16 @@ CK_RV SoftHSM::C_GenerateKeyPair
 	if (pMechanism->mechanism == CKM_ML_DSA_KEY_PAIR_GEN)
 	{
 			return this->generateMLDSA(hSession,
+									 pPublicKeyTemplate, ulPublicKeyAttributeCount,
+									 pPrivateKeyTemplate, ulPrivateKeyAttributeCount,
+									 phPublicKey, phPrivateKey,
+									 ispublicKeyToken, ispublicKeyPrivate, isprivateKeyToken, isprivateKeyPrivate);
+	}
+#endif
+#ifdef WITH_SLH_DSA
+	if (pMechanism->mechanism == CKM_SLH_DSA_KEY_PAIR_GEN)
+	{
+		return this->generateSLHDSA(hSession,
 									 pPublicKeyTemplate, ulPublicKeyAttributeCount,
 									 pPrivateKeyTemplate, ulPrivateKeyAttributeCount,
 									 phPublicKey, phPrivateKey,
@@ -7933,6 +8132,11 @@ CK_RV SoftHSM::C_WrapKey
 				alg = AsymAlgo::MLKEM;
 				break;
 #endif
+#ifdef WITH_SLH_DSA
+			case CKK_SLH_DSA:
+				alg = AsymAlgo::SLHDSA;
+				break;
+#endif
 			default:
 				return CKR_KEY_NOT_WRAPPABLE;
 		}
@@ -7980,6 +8184,11 @@ CK_RV SoftHSM::C_WrapKey
 #ifdef WITH_ML_KEM
 			case CKK_ML_KEM:
 				rv = MLKEMUtil::getMLKEMPrivateKey((MLKEMPrivateKey*)privateKey, token, key);
+				break;
+#endif
+#ifdef WITH_SLH_DSA
+			case CKK_SLH_DSA:
+				rv = SLHDSAUtil::getSLHDSAPrivateKey((SLHDSAPrivateKey*)privateKey, token, key);
 				break;
 #endif
 		}
@@ -8733,6 +8942,17 @@ CK_RV SoftHSM::C_UnwrapKey
 				bOK = bOK && MLKEMUtil::setMLKEMPrivateKey(osobject, keydata, token, isPrivate != CK_FALSE);
 			}
 #endif
+#ifdef WITH_SLH_DSA
+			else if (keyType == CKK_SLH_DSA)
+			{
+				CK_RV slh_rv = SLHDSAUtil::setSLHDSAPrivateKey(osobject, keydata, token, isPrivate != CK_FALSE);
+				if (slh_rv != CKR_OK)
+				{
+					bOK = false;
+					rv = slh_rv;
+				}
+			}
+#endif
 			else
 				bOK = false;
 
@@ -8742,7 +8962,10 @@ CK_RV SoftHSM::C_UnwrapKey
 				osobject->abortTransaction();
 
 			if (!bOK)
-				rv = CKR_FUNCTION_FAILED;
+			{
+				if (rv == CKR_OK)
+					rv = CKR_FUNCTION_FAILED;
+			}
 		}
 		else
 			rv = CKR_FUNCTION_FAILED;
@@ -15756,6 +15979,315 @@ bool SoftHSM::detectFork(void) {
 	return forkID != getpid();
 #endif
 }
+#ifdef WITH_SLH_DSA
+CK_RV SoftHSM::generateSLHDSA(
+    CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pPublicKeyTemplate,
+    CK_ULONG ulPublicKeyAttributeCount, CK_ATTRIBUTE_PTR pPrivateKeyTemplate,
+    CK_ULONG ulPrivateKeyAttributeCount, CK_OBJECT_HANDLE_PTR phPublicKey,
+    CK_OBJECT_HANDLE_PTR phPrivateKey, CK_BBOOL isPublicKeyOnToken,
+    CK_BBOOL isPublicKeyPrivate, CK_BBOOL isPrivateKeyOnToken,
+    CK_BBOOL isPrivateKeyPrivate) {
+  *phPublicKey = CK_INVALID_HANDLE;
+  *phPrivateKey = CK_INVALID_HANDLE;
+
+  // Get the session
+  Session *session = (Session *)handleManager->getSession(hSession);
+  if (session == NULL)
+    return CKR_SESSION_HANDLE_INVALID;
+
+  // Get the token
+  Token *token = session->getToken();
+  if (token == NULL)
+    return CKR_GENERAL_ERROR;
+
+  // Extract desired key information
+  CK_ULONG paramSet = 0;
+  for (CK_ULONG i = 0; i < ulPublicKeyAttributeCount; i++) {
+    switch (pPublicKeyTemplate[i].type) {
+    case CKA_PARAMETER_SET:
+      if (pPublicKeyTemplate[i].ulValueLen != sizeof(CK_ULONG)) {
+        INFO_MSG("CKA_PARAMETER_SET must be sizeof(CK_ULONG)");
+        return CKR_ATTRIBUTE_VALUE_INVALID;
+      }
+      if (pPublicKeyTemplate[i].pValue == NULL) {
+        INFO_MSG("CKA_PARAMETER_SET must have a value");
+        return CKR_ATTRIBUTE_VALUE_INVALID;
+      }
+      paramSet = *(CK_ULONG *)pPublicKeyTemplate[i].pValue;
+      break;
+    default:
+      break;
+    }
+  }
+
+  // Scan private key template for CKA_PARAMETER_SET as well
+  CK_ULONG privParamSet = 0;
+  for (CK_ULONG i = 0; i < ulPrivateKeyAttributeCount; i++) {
+    switch (pPrivateKeyTemplate[i].type) {
+    case CKA_PARAMETER_SET:
+      if (pPrivateKeyTemplate[i].ulValueLen != sizeof(CK_ULONG)) {
+        INFO_MSG("CKA_PARAMETER_SET must be sizeof(CK_ULONG)");
+        return CKR_ATTRIBUTE_VALUE_INVALID;
+      }
+      if (pPrivateKeyTemplate[i].pValue == NULL) {
+        INFO_MSG("CKA_PARAMETER_SET must have a value");
+        return CKR_ATTRIBUTE_VALUE_INVALID;
+      }
+      privParamSet = *(CK_ULONG *)pPrivateKeyTemplate[i].pValue;
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (paramSet == 0) {
+    if (privParamSet == 0) {
+      INFO_MSG("Missing parameter(s) CKA_PARAMETER_SET in templates");
+      return CKR_TEMPLATE_INCOMPLETE;
+    }
+    paramSet = privParamSet;
+  } else if (privParamSet != 0 && paramSet != privParamSet) {
+    INFO_MSG("CKA_PARAMETER_SET mismatch between public and private templates");
+    return CKR_TEMPLATE_INCONSISTENT;
+  }
+
+  if (paramSet < CKP_SLH_DSA_SHA2_128S || paramSet > CKP_SLH_DSA_SHAKE_256F) {
+    INFO_MSG("Unsupported parameter set: %lu", (unsigned long)paramSet);
+    return CKR_PARAMETER_SET_NOT_SUPPORTED;
+  }
+
+  // Set the parameters
+  SLHDSAParameters p;
+  p.setParameterSet(paramSet);
+
+  // Generate key pair
+  AsymmetricKeyPair *kp = NULL;
+  AsymmetricAlgorithm *slhdsa =
+      CryptoFactory::i()->getAsymmetricAlgorithm(AsymAlgo::SLHDSA);
+  if (slhdsa == NULL)
+    return CKR_GENERAL_ERROR;
+  if (!slhdsa->generateKeyPair(&kp, &p)) {
+    ERROR_MSG("Could not generate key pair");
+    CryptoFactory::i()->recycleAsymmetricAlgorithm(slhdsa);
+    return CKR_GENERAL_ERROR;
+  }
+
+  SLHDSAPublicKey *pub = (SLHDSAPublicKey *)kp->getPublicKey();
+  SLHDSAPrivateKey *priv = (SLHDSAPrivateKey *)kp->getPrivateKey();
+
+  CK_RV rv = CKR_OK;
+
+  // Create a public key using C_CreateObject
+  if (rv == CKR_OK) {
+    const CK_ULONG maxAttribs = 32;
+    CK_OBJECT_CLASS publicKeyClass = CKO_PUBLIC_KEY;
+    CK_KEY_TYPE publicKeyType = CKK_SLH_DSA;
+    CK_ATTRIBUTE publicKeyAttribs[maxAttribs] = {
+        {CKA_CLASS, &publicKeyClass, sizeof(publicKeyClass)},
+        {CKA_TOKEN, &isPublicKeyOnToken, sizeof(isPublicKeyOnToken)},
+        {CKA_PRIVATE, &isPublicKeyPrivate, sizeof(isPublicKeyPrivate)},
+        {CKA_KEY_TYPE, &publicKeyType, sizeof(publicKeyType)},
+    };
+    CK_ULONG publicKeyAttribsCount = 4;
+
+    // Add the additional
+    if (ulPublicKeyAttributeCount > (maxAttribs - publicKeyAttribsCount))
+      rv = CKR_TEMPLATE_INCONSISTENT;
+    for (CK_ULONG i = 0; i < ulPublicKeyAttributeCount && rv == CKR_OK; ++i) {
+      switch (pPublicKeyTemplate[i].type) {
+      case CKA_CLASS:
+      case CKA_TOKEN:
+      case CKA_PRIVATE:
+      case CKA_KEY_TYPE:
+        continue;
+      case CKA_PARAMETER_SET:
+        if (pPublicKeyTemplate[i].ulValueLen != sizeof(CK_ULONG)) {
+          INFO_MSG("CKA_PARAMETER_SET must be sizeof(CK_ULONG)");
+          rv = CKR_ATTRIBUTE_VALUE_INVALID;
+          break;
+        }
+        if (pPublicKeyTemplate[i].pValue == NULL) {
+          INFO_MSG("CKA_PARAMETER_SET must have a value");
+          rv = CKR_ATTRIBUTE_VALUE_INVALID;
+          break;
+        }
+        if (*(CK_ULONG *)pPublicKeyTemplate[i].pValue != paramSet) {
+          INFO_MSG("CKA_PARAMETER_SET mismatch between public and private templates");
+          rv = CKR_TEMPLATE_INCONSISTENT;
+          break;
+        }
+        publicKeyAttribs[publicKeyAttribsCount++] = pPublicKeyTemplate[i];
+        break;
+      default:
+        publicKeyAttribs[publicKeyAttribsCount++] = pPublicKeyTemplate[i];
+      }
+    }
+
+    if (rv == CKR_OK)
+      rv = this->CreateObject(hSession, publicKeyAttribs, publicKeyAttribsCount,
+                              phPublicKey, OBJECT_OP_GENERATE);
+
+    // Store the attributes that are being supplied by the key generation to the
+    // object
+    if (rv == CKR_OK) {
+      OSObject *osobject = (OSObject *)handleManager->getObject(*phPublicKey);
+      if (osobject == NULL_PTR || !osobject->isValid()) {
+        rv = CKR_FUNCTION_FAILED;
+      } else if (osobject->startTransaction()) {
+        bool bOK = true;
+
+        // Common Key Attributes
+        bOK = bOK && osobject->setAttribute(CKA_LOCAL, true);
+        CK_ULONG ulKeyGenMechanism = (CK_ULONG)CKM_SLH_DSA_KEY_PAIR_GEN;
+        bOK = bOK &&
+              osobject->setAttribute(CKA_KEY_GEN_MECHANISM, ulKeyGenMechanism);
+
+        // SLH-DSA Public Key Attributes
+        ByteString value;
+        if (isPublicKeyPrivate) {
+          token->encrypt(pub->getValue(), value);
+        } else {
+          value = pub->getValue();
+        }
+        bOK = bOK &&
+              osobject->setAttribute(CKA_PARAMETER_SET, pub->getParameterSet());
+        bOK = bOK && osobject->setAttribute(CKA_VALUE, value);
+
+        if (bOK)
+          bOK = osobject->commitTransaction();
+        else
+          osobject->abortTransaction();
+
+        if (!bOK)
+          rv = CKR_FUNCTION_FAILED;
+      } else
+        rv = CKR_FUNCTION_FAILED;
+    }
+  }
+
+  // Create a private key using C_CreateObject
+  if (rv == CKR_OK) {
+    const CK_ULONG maxAttribs = 32;
+    CK_OBJECT_CLASS privateKeyClass = CKO_PRIVATE_KEY;
+    CK_KEY_TYPE privateKeyType = CKK_SLH_DSA;
+    CK_ATTRIBUTE privateKeyAttribs[maxAttribs] = {
+        {CKA_CLASS, &privateKeyClass, sizeof(privateKeyClass)},
+        {CKA_TOKEN, &isPrivateKeyOnToken, sizeof(isPrivateKeyOnToken)},
+        {CKA_PRIVATE, &isPrivateKeyPrivate, sizeof(isPrivateKeyPrivate)},
+        {CKA_KEY_TYPE, &privateKeyType, sizeof(privateKeyType)},
+    };
+    CK_ULONG privateKeyAttribsCount = 4;
+    if (ulPrivateKeyAttributeCount > (maxAttribs - privateKeyAttribsCount))
+      rv = CKR_TEMPLATE_INCONSISTENT;
+    for (CK_ULONG i = 0; i < ulPrivateKeyAttributeCount && rv == CKR_OK; ++i) {
+      switch (pPrivateKeyTemplate[i].type) {
+      case CKA_CLASS:
+      case CKA_TOKEN:
+      case CKA_PRIVATE:
+      case CKA_KEY_TYPE:
+        continue;
+      case CKA_PARAMETER_SET:
+        if (pPrivateKeyTemplate[i].ulValueLen != sizeof(CK_ULONG)) {
+          INFO_MSG("CKA_PARAMETER_SET must be sizeof(CK_ULONG)");
+          rv = CKR_ATTRIBUTE_VALUE_INVALID;
+          break;
+        }
+        if (pPrivateKeyTemplate[i].pValue == NULL) {
+          INFO_MSG("CKA_PARAMETER_SET must have a value");
+          rv = CKR_ATTRIBUTE_VALUE_INVALID;
+          break;
+        }
+        if (*(CK_ULONG *)pPrivateKeyTemplate[i].pValue != paramSet) {
+          INFO_MSG("CKA_PARAMETER_SET mismatch between public and private templates");
+          rv = CKR_TEMPLATE_INCONSISTENT;
+          break;
+        }
+        privateKeyAttribs[privateKeyAttribsCount++] = pPrivateKeyTemplate[i];
+        break;
+      default:
+        privateKeyAttribs[privateKeyAttribsCount++] = pPrivateKeyTemplate[i];
+      }
+    }
+
+    if (rv == CKR_OK)
+      rv = this->CreateObject(hSession, privateKeyAttribs,
+                              privateKeyAttribsCount, phPrivateKey,
+                              OBJECT_OP_GENERATE);
+
+    // Store the attributes that are being supplied by the key generation to the
+    // object
+    if (rv == CKR_OK) {
+      OSObject *osobject = (OSObject *)handleManager->getObject(*phPrivateKey);
+      if (osobject == NULL_PTR || !osobject->isValid()) {
+        rv = CKR_FUNCTION_FAILED;
+      } else if (osobject->startTransaction()) {
+        bool bOK = true;
+
+        // Common Key Attributes
+        bOK = bOK && osobject->setAttribute(CKA_LOCAL, true);
+        CK_ULONG ulKeyGenMechanism = (CK_ULONG)CKM_SLH_DSA_KEY_PAIR_GEN;
+        bOK = bOK &&
+              osobject->setAttribute(CKA_KEY_GEN_MECHANISM, ulKeyGenMechanism);
+
+        // Common Private Key Attributes
+        bool bAlwaysSensitive = osobject->getBooleanValue(CKA_SENSITIVE, false);
+        bOK = bOK &&
+              osobject->setAttribute(CKA_ALWAYS_SENSITIVE, bAlwaysSensitive);
+        bool bNeverExtractable =
+            osobject->getBooleanValue(CKA_EXTRACTABLE, false) == false;
+        bOK = bOK &&
+              osobject->setAttribute(CKA_NEVER_EXTRACTABLE, bNeverExtractable);
+
+        // SLHDSA Private Key Attributes
+        ByteString value;
+        if (isPrivateKeyPrivate) {
+          token->encrypt(priv->getValue(), value);
+        } else {
+          value = priv->getValue();
+        }
+
+        bOK = bOK && osobject->setAttribute(CKA_PARAMETER_SET,
+                                            priv->getParameterSet());
+        bOK = bOK && osobject->setAttribute(CKA_VALUE, value);
+
+        if (bOK)
+          bOK = osobject->commitTransaction();
+        else
+          osobject->abortTransaction();
+
+        if (!bOK)
+          rv = CKR_FUNCTION_FAILED;
+      } else
+        rv = CKR_FUNCTION_FAILED;
+    }
+  }
+
+  // Clean up
+  slhdsa->recycleKeyPair(kp);
+  CryptoFactory::i()->recycleAsymmetricAlgorithm(slhdsa);
+
+  // Remove keys that may have been created already when the function fails.
+  if (rv != CKR_OK) {
+    if (*phPrivateKey != CK_INVALID_HANDLE) {
+      OSObject *ospriv = (OSObject *)handleManager->getObject(*phPrivateKey);
+      handleManager->destroyObject(*phPrivateKey);
+      if (ospriv)
+        ospriv->destroyObject();
+      *phPrivateKey = CK_INVALID_HANDLE;
+    }
+
+    if (*phPublicKey != CK_INVALID_HANDLE) {
+      OSObject *ospub = (OSObject *)handleManager->getObject(*phPublicKey);
+      handleManager->destroyObject(*phPublicKey);
+      if (ospub)
+        ospub->destroyObject();
+      *phPublicKey = CK_INVALID_HANDLE;
+    }
+  }
+
+  return rv;
+}
+#endif
 
 unsigned long SoftHSM::mockAndSleep(const char* function) {
 	DEBUG_MSG("Evaluating mock for function: %s, isMockError: %d, mockOccurences: %d, mockTimes: %d", function, isMockError, mockOccurences, mockTimes);

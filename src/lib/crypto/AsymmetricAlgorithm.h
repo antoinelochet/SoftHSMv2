@@ -59,8 +59,9 @@ struct AsymAlgo
 		GOST,
 		EDDSA,
 		MLDSA,
-		MLKEM
-        };
+		MLKEM,
+        SLHDSA
+    };
 };
 
 struct AsymMech
@@ -104,7 +105,8 @@ struct AsymMech
 		GOST_GOST,
 		EDDSA,
 		MLDSA,
-		MLKEM
+		MLKEM,
+		SLHDSA
 	};
 };
 
