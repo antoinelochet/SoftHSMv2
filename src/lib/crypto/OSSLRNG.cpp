@@ -33,20 +33,44 @@
 #include "config.h"
 #include "OSSLRNG.h"
 #include <openssl/rand.h>
+#include <limits.h>
+
+// RAND_bytes()/RAND_seed() take an int length, so a size_t over INT_MAX would
+// be truncated. Clamp each call and loop so the whole request is covered.
+static int clampToInt(size_t len)
+{
+	return len > (size_t) INT_MAX ? INT_MAX : (int) len;
+}
 
 // Generate random data
 bool OSSLRNG::generateRandom(ByteString& data, const size_t len)
 {
 	data.wipe(len);
 
-	if (len == 0)
-		return true;
-	return RAND_bytes(&data[0], len) == 1;
+	size_t offset = 0;
+	while (offset < len)
+	{
+		int chunk = clampToInt(len - offset);
+		if (RAND_bytes(&data[offset], chunk) != 1)
+			return false;
+		offset += (size_t) chunk;
+	}
+	return true;
 }
 
 // Seed the random pool
 void OSSLRNG::seed(ByteString& seedData)
 {
-	RAND_seed(seedData.byte_str(), seedData.size());
+	// RAND_seed() accumulates entropy, so feeding the seed in pieces is fine.
+	const unsigned char* bytes = seedData.const_byte_str();
+	size_t len = seedData.size();
+
+	size_t offset = 0;
+	while (offset < len)
+	{
+		int chunk = clampToInt(len - offset);
+		RAND_seed(bytes + offset, chunk);
+		offset += (size_t) chunk;
+	}
 }
 
