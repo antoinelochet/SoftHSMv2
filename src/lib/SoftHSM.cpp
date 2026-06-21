@@ -8487,6 +8487,23 @@ CK_RV SoftHSM::C_EncapsulateKey
 							INFO_MSG("CKA_VALUE must not be included");
 							rv = CKR_ATTRIBUTE_READ_ONLY;
 							break;
+						case CKA_VALUE_LEN:
+							byteLen = *(CK_ULONG*)pTemplate[i].pValue;
+							if (byteLen > 32)
+							{
+								INFO_MSG("CKA_VALUE_LEN must be less than or equal to 32");
+								return CKR_WRAPPED_KEY_LEN_RANGE;
+							}
+							if (keyType == CKK_AES)
+							{
+								if (byteLen != 16 && byteLen != 24 && byteLen != 32)
+								{
+									INFO_MSG("CKA_VALUE_LEN must be 16, 24 or 32 for AES");
+									return CKR_ATTRIBUTE_VALUE_INVALID;
+								}
+								break;
+							}
+							break;
 						case CKA_CHECK_VALUE:
 							if (pTemplate[i].ulValueLen > 0)
 							{
@@ -8650,7 +8667,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 	CK_BBOOL isDecapsulationKeyOnToken = decapsulationKey->getBooleanValue(CKA_TOKEN, false);
 	CK_BBOOL isDecapsulationKeyPrivate = decapsulationKey->getBooleanValue(CKA_PRIVATE, true);
 
-	// Check user credentials for the wrapping key
+	// Check user credentials for the decapsulation key
 	rv = haveRead(session->getState(), isDecapsulationKeyOnToken, isDecapsulationKeyPrivate);
 	if (rv != CKR_OK)
 	{
@@ -8661,7 +8678,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 	}
 
 	// Check if the wrapping key can be used for decapsulation
-	if (decapsulationKey->getBooleanValue(CKA_DECAPSULATE, false) == false)
+	if (!decapsulationKey->getBooleanValue(CKA_DECAPSULATE, false))
 		return CKR_KEY_FUNCTION_NOT_PERMITTED;
 
 	// Check if the specified mechanism is allowed for the wrapping key
@@ -8762,7 +8779,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 			}
 		}
 
-		rv = this->CreateObject(hSession, secretAttribs, secretAttribsCount, phKey, OBJECT_OP_UNWRAP);
+		rv = this->CreateObject(hSession, secretAttribs, secretAttribsCount, phKey, OBJECT_OP_DECAPSULATE);
 
 		// Store the attributes that are being supplied
 		if (rv == CKR_OK)
@@ -8780,6 +8797,23 @@ CK_RV SoftHSM::C_DecapsulateKey
 						case CKA_VALUE:
 							INFO_MSG("CKA_VALUE must not be included");
 							return CKR_ATTRIBUTE_READ_ONLY;
+						case CKA_VALUE_LEN:
+							byteLen = *(CK_ULONG*)pTemplate[i].pValue;
+							if (byteLen > 32)
+							{
+								INFO_MSG("CKA_VALUE_LEN must be less than or equal to 32");
+								return CKR_WRAPPED_KEY_LEN_RANGE;
+							}
+							if (keyType == CKK_AES)
+							{
+								if (byteLen != 16 && byteLen != 24 && byteLen != 32)
+								{
+									INFO_MSG("CKA_VALUE_LEN must be 16, 24 or 32 for AES");
+									return CKR_ATTRIBUTE_VALUE_INVALID;
+								}
+								break;
+							}
+							break;
 						case CKA_CHECK_VALUE:
 							if (pTemplate[i].ulValueLen > 0)
 							{
