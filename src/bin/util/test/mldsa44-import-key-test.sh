@@ -1,5 +1,9 @@
 #! /bin/bash
-# This file is in the public domain
+# 
+# Copyright (c) 2026 SoftHSMv2 contributors
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
 
 CI_TEST_ENABLED="${MLDSA_TEST}"
 ALGO_NAME="ML-DSA"

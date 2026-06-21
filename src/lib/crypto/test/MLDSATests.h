@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 SoftHSMv2 contributors
+ *
+ * SPDX-License-Identifier: BSD-2-Clause
+ */
 /*****************************************************************************
  MLDSATests.h
 
