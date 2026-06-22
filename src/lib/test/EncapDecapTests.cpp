@@ -14,14 +14,12 @@
 #include <string.h>
 #include "EncapDecapTests.h"
 
-// CKA_TOKEN
-const CK_BBOOL ON_TOKEN = CK_TRUE;
+#ifdef WITH_ML_KEM
 const CK_BBOOL IN_SESSION = CK_FALSE;
 
-// CKA_PRIVATE
 const CK_BBOOL IS_PRIVATE = CK_TRUE;
 const CK_BBOOL IS_PUBLIC = CK_FALSE;
-
+#endif
 
 CPPUNIT_TEST_SUITE_REGISTRATION(EncapDecapTests);
 
@@ -66,7 +64,6 @@ CK_RV EncapDecapTests::generateMLKEM(CK_ULONG parameterSet, CK_SESSION_HANDLE hS
 void EncapDecapTests::testMLKEMEncapsulationDecapsulation(CK_ULONG parameterSet)
 {
 	CK_RV rv;
-	CK_SESSION_HANDLE hSessionRO;
 	CK_SESSION_HANDLE hSessionRW;
     CK_MECHANISM mechanism = { CKM_ML_KEM, NULL_PTR, 0 };
 	CK_BBOOL bTrue = CK_TRUE;
@@ -76,16 +73,8 @@ void EncapDecapTests::testMLKEMEncapsulationDecapsulation(CK_ULONG parameterSet)
 	// Just make sure that we finalize any previous tests
 	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
 
-	// Open read-only session on when the token is not initialized should fail
-	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION, NULL_PTR, NULL_PTR, &hSessionRO) );
-	CPPUNIT_ASSERT(rv == CKR_CRYPTOKI_NOT_INITIALIZED);
-
 	// Initialize the library and start the test.
 	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
-	CPPUNIT_ASSERT(rv == CKR_OK);
-
-	// Open read-only session
-	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION, NULL_PTR, NULL_PTR, &hSessionRO) );
 	CPPUNIT_ASSERT(rv == CKR_OK);
 
 	// Open read-write session
@@ -93,7 +82,7 @@ void EncapDecapTests::testMLKEMEncapsulationDecapsulation(CK_ULONG parameterSet)
 	CPPUNIT_ASSERT(rv == CKR_OK);
 
 	// Login USER into the sessions so we can create a private objects
-	rv = CRYPTOKI_F_PTR( C_Login(hSessionRO,CKU_USER,m_userPin1,m_userPin1Length) );
+	rv = CRYPTOKI_F_PTR( C_Login(hSessionRW,CKU_USER,m_userPin1,m_userPin1Length) );
 	CPPUNIT_ASSERT(rv==CKR_OK);
 
 	CK_OBJECT_HANDLE hPuk = CK_INVALID_HANDLE;
@@ -193,6 +182,272 @@ void EncapDecapTests::testMLKEMEncapsulationDecapsulation(CK_ULONG parameterSet)
 	CPPUNIT_ASSERT(rv == CKR_OK);
 }
 
+void EncapDecapTests::testMLKEMEncapsulationCiphertextIsNull()
+{
+	CK_RV rv;
+	CK_SESSION_HANDLE hSessionRW;
+    CK_MECHANISM mechanism = { CKM_ML_KEM, NULL_PTR, 0 };
+	CK_BBOOL bTrue = CK_TRUE;
+    CK_KEY_TYPE keyType = CKK_AES;
+    CK_OBJECT_CLASS keyClass = CKO_SECRET_KEY;
+    CK_ULONG parameterSet = CKP_ML_KEM_512;
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	// Initialize the library and start the test.
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Open read-write session
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSessionRW) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Login USER into the sessions so we can create a private objects
+	rv = CRYPTOKI_F_PTR( C_Login(hSessionRW,CKU_USER,m_userPin1,m_userPin1Length) );
+	CPPUNIT_ASSERT(rv==CKR_OK);
+
+	CK_OBJECT_HANDLE hPuk = CK_INVALID_HANDLE;
+	CK_OBJECT_HANDLE hPrk = CK_INVALID_HANDLE;
+
+    // Generate ML-KEM key pair
+    rv = generateMLKEM(parameterSet, hSessionRW, IN_SESSION, IS_PUBLIC, IN_SESSION, IS_PRIVATE, hPuk, hPrk);
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hPuk != CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(hPrk != CK_INVALID_HANDLE);
+
+    // Test encapsulation - create a new AES key through encapsulation
+    CK_ATTRIBUTE keyAttribs[] = {
+        { CKA_CLASS, &keyClass, sizeof(keyClass) },
+        { CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+        { CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+        { CKA_DECRYPT, &bTrue, sizeof(bTrue) }
+    };
+
+    CK_OBJECT_HANDLE hEncapKey = CK_INVALID_HANDLE;
+    CK_ULONG ulCipherTextLen = sizeof(CK_ULONG);
+
+    rv = CRYPTOKI_F_PTR(C_EncapsulateKey(
+        hSessionRW,
+        &mechanism,
+        hPuk,
+        keyAttribs,
+        sizeof(keyAttribs) / sizeof(CK_ATTRIBUTE),
+        NULL_PTR,  // Passing NULL_PTR for ciphertext to test behavior
+        &ulCipherTextLen,
+        &hEncapKey
+    ));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hEncapKey == CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(ulCipherTextLen > 0);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPuk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPrk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Close the session
+	rv = CRYPTOKI_F_PTR(C_CloseSession(hSessionRW));
+	CPPUNIT_ASSERT(rv == CKR_OK);
+}
+
+void EncapDecapTests::testMLKEMDecapsulationCiphertextLengthIsZero()
+{
+	CK_RV rv;
+	CK_SESSION_HANDLE hSessionRW;
+    CK_MECHANISM mechanism = { CKM_ML_KEM, NULL_PTR, 0 };
+	CK_BBOOL bTrue = CK_TRUE;
+    CK_KEY_TYPE keyType = CKK_AES;
+    CK_OBJECT_CLASS keyClass = CKO_SECRET_KEY;
+    CK_ULONG parameterSet = CKP_ML_KEM_512;
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	// Initialize the library and start the test.
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Open read-write session
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSessionRW) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Login USER into the sessions so we can create a private objects
+	rv = CRYPTOKI_F_PTR( C_Login(hSessionRW,CKU_USER,m_userPin1,m_userPin1Length) );
+	CPPUNIT_ASSERT(rv==CKR_OK);
+
+	CK_OBJECT_HANDLE hPuk = CK_INVALID_HANDLE;
+	CK_OBJECT_HANDLE hPrk = CK_INVALID_HANDLE;
+
+    // Generate ML-KEM key pair
+    rv = generateMLKEM(parameterSet, hSessionRW, IN_SESSION, IS_PUBLIC, IN_SESSION, IS_PRIVATE, hPuk, hPrk);
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hPuk != CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(hPrk != CK_INVALID_HANDLE);
+
+    // Test encapsulation - create a new AES key through encapsulation
+    CK_ATTRIBUTE keyAttribs[] = {
+        { CKA_CLASS, &keyClass, sizeof(keyClass) },
+        { CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+        { CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+        { CKA_DECRYPT, &bTrue, sizeof(bTrue) }
+    };
+
+    CK_OBJECT_HANDLE hEncapKey = CK_INVALID_HANDLE;
+    CK_BYTE cipherText[2048];
+    CK_ULONG ulCipherTextLen = sizeof(cipherText);
+    memset(cipherText, 0, sizeof(cipherText));
+
+    rv = CRYPTOKI_F_PTR(C_EncapsulateKey(
+        hSessionRW,
+        &mechanism,
+        hPuk,
+        keyAttribs,
+        sizeof(keyAttribs) / sizeof(CK_ATTRIBUTE),
+        cipherText,
+        &ulCipherTextLen,
+        &hEncapKey
+    ));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hEncapKey != CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(ulCipherTextLen > 0);
+
+    // Test decapsulation - recover the shared secret using the ciphertext
+    CK_OBJECT_HANDLE hDecapKey = CK_INVALID_HANDLE;
+
+    CK_ATTRIBUTE decapKeyAttribs[] = {
+        { CKA_CLASS, &keyClass, sizeof(keyClass) },
+        { CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+        { CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+        { CKA_DECRYPT, &bTrue, sizeof(bTrue) }
+    };
+
+    rv = CRYPTOKI_F_PTR(C_DecapsulateKey(
+        hSessionRW,
+        &mechanism,
+        hPrk,
+        decapKeyAttribs,
+        sizeof(decapKeyAttribs) / sizeof(CK_ATTRIBUTE),
+        cipherText,
+        0,  // Passing 0 for ciphertext length to test behavior
+        &hDecapKey
+    ));
+    CPPUNIT_ASSERT(rv == CKR_ATTRIBUTE_VALUE_INVALID);
+
+    // Clean up
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hEncapKey));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPuk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPrk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Close the session
+	rv = CRYPTOKI_F_PTR(C_CloseSession(hSessionRW));
+	CPPUNIT_ASSERT(rv == CKR_OK);
+}
+
+void EncapDecapTests::testMLKEMDecapsulationCiphertextIsNull()
+{
+	CK_RV rv;
+	CK_SESSION_HANDLE hSessionRW;
+    CK_MECHANISM mechanism = { CKM_ML_KEM, NULL_PTR, 0 };
+	CK_BBOOL bTrue = CK_TRUE;
+    CK_KEY_TYPE keyType = CKK_AES;
+    CK_OBJECT_CLASS keyClass = CKO_SECRET_KEY;
+    CK_ULONG parameterSet = CKP_ML_KEM_512;
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	// Initialize the library and start the test.
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Open read-write session
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSessionRW) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Login USER into the sessions so we can create a private objects
+	rv = CRYPTOKI_F_PTR( C_Login(hSessionRW,CKU_USER,m_userPin1,m_userPin1Length) );
+	CPPUNIT_ASSERT(rv==CKR_OK);
+
+	CK_OBJECT_HANDLE hPuk = CK_INVALID_HANDLE;
+	CK_OBJECT_HANDLE hPrk = CK_INVALID_HANDLE;
+
+    // Generate ML-KEM key pair
+    rv = generateMLKEM(parameterSet, hSessionRW, IN_SESSION, IS_PUBLIC, IN_SESSION, IS_PRIVATE, hPuk, hPrk);
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hPuk != CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(hPrk != CK_INVALID_HANDLE);
+
+    // Test encapsulation - create a new AES key through encapsulation
+    CK_ATTRIBUTE keyAttribs[] = {
+        { CKA_CLASS, &keyClass, sizeof(keyClass) },
+        { CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+        { CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+        { CKA_DECRYPT, &bTrue, sizeof(bTrue) }
+    };
+
+    CK_OBJECT_HANDLE hEncapKey = CK_INVALID_HANDLE;
+    CK_BYTE cipherText[2048];
+    CK_ULONG ulCipherTextLen = sizeof(cipherText);
+    memset(cipherText, 0, sizeof(cipherText));
+
+    rv = CRYPTOKI_F_PTR(C_EncapsulateKey(
+        hSessionRW,
+        &mechanism,
+        hPuk,
+        keyAttribs,
+        sizeof(keyAttribs) / sizeof(CK_ATTRIBUTE),
+        cipherText,
+        &ulCipherTextLen,
+        &hEncapKey
+    ));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hEncapKey != CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(ulCipherTextLen > 0);
+
+    // Test decapsulation - recover the shared secret using the ciphertext
+    CK_OBJECT_HANDLE hDecapKey = CK_INVALID_HANDLE;
+
+    CK_ATTRIBUTE decapKeyAttribs[] = {
+        { CKA_CLASS, &keyClass, sizeof(keyClass) },
+        { CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+        { CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+        { CKA_DECRYPT, &bTrue, sizeof(bTrue) }
+    };
+
+    rv = CRYPTOKI_F_PTR(C_DecapsulateKey(
+        hSessionRW,
+        &mechanism,
+        hPrk,
+        decapKeyAttribs,
+        sizeof(decapKeyAttribs) / sizeof(CK_ATTRIBUTE),
+        NULL_PTR,  // Passing NULL_PTR for ciphertext to test behavior
+        ulCipherTextLen,
+        &hDecapKey
+    ));
+    CPPUNIT_ASSERT(rv == CKR_ATTRIBUTE_VALUE_INVALID);
+
+    // Clean up
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hEncapKey));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPuk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPrk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Close the session
+	rv = CRYPTOKI_F_PTR(C_CloseSession(hSessionRW));
+	CPPUNIT_ASSERT(rv == CKR_OK);
+}
+
 void EncapDecapTests::testMLKEMEncapsulationDecapsulationWithValueLen(CK_ULONG ulValueLen)
 {
 	CK_RV rv;
@@ -265,14 +520,13 @@ void EncapDecapTests::testMLKEMEncapsulationDecapsulationWithValueLen(CK_ULONG u
     CPPUNIT_ASSERT(ulCipherTextLen > 0);
 
     // Verify the decapsulated key has the correct length
-    CK_BYTE encapKeyLength[64];
+    CK_ULONG encapKeyLength = 0;
     CK_ULONG encapKeyLengthLen = sizeof(encapKeyLength);
-    CK_ATTRIBUTE getEncapKeyValueAttrib = { CKA_VALUE_LEN, encapKeyLength, encapKeyLengthLen };
+    CK_ATTRIBUTE getEncapKeyValueAttrib = { CKA_VALUE_LEN, &encapKeyLength, encapKeyLengthLen };
 
     rv = CRYPTOKI_F_PTR(C_GetAttributeValue(hSessionRW, hEncapKey, &getEncapKeyValueAttrib, 1));
     CPPUNIT_ASSERT(rv == CKR_OK);
-    encapKeyLengthLen = *(CK_ULONG*)getEncapKeyValueAttrib.pValue;
-    CPPUNIT_ASSERT(encapKeyLengthLen == ulValueLen);
+    CPPUNIT_ASSERT(encapKeyLength == ulValueLen);
 
     // Get key check value for encapsulated key
     CK_BYTE encapKCV[64];
@@ -308,14 +562,13 @@ void EncapDecapTests::testMLKEMEncapsulationDecapsulationWithValueLen(CK_ULONG u
     CPPUNIT_ASSERT(hDecapKey != CK_INVALID_HANDLE);
 
     // Verify the decapsulated key has the correct length
-    CK_BYTE decapKeyLength[64];
+    CK_ULONG decapKeyLength = 0;
     CK_ULONG decapKeyLengthLen = sizeof(decapKeyLength);
-    CK_ATTRIBUTE getDecapKeyValueAttrib = { CKA_VALUE_LEN, decapKeyLength, decapKeyLengthLen };
+    CK_ATTRIBUTE getDecapKeyValueAttrib = { CKA_VALUE_LEN, &decapKeyLength, decapKeyLengthLen };
 
     rv = CRYPTOKI_F_PTR(C_GetAttributeValue(hSessionRW, hDecapKey, &getDecapKeyValueAttrib, 1));
     CPPUNIT_ASSERT(rv == CKR_OK);
-    decapKeyLengthLen = *(CK_ULONG*)getDecapKeyValueAttrib.pValue;
-    CPPUNIT_ASSERT(decapKeyLengthLen == ulValueLen);
+    CPPUNIT_ASSERT(decapKeyLength == ulValueLen);
 
     // Get key check value for decapsulated key
     CK_BYTE decapKCV[64];
@@ -336,6 +589,80 @@ void EncapDecapTests::testMLKEMEncapsulationDecapsulationWithValueLen(CK_ULONG u
 
     rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hDecapKey));
     CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPuk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+    rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPrk));
+    CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Close the session
+	rv = CRYPTOKI_F_PTR(C_CloseSession(hSessionRW));
+	CPPUNIT_ASSERT(rv == CKR_OK);
+}
+
+void EncapDecapTests::testMLKEMEncapsulationDecapsulationWithValueLenWrong()
+{
+	CK_RV rv;
+	CK_SESSION_HANDLE hSessionRW;
+    CK_MECHANISM mechanism = { CKM_ML_KEM, NULL_PTR, 0 };
+	CK_BBOOL bTrue = CK_TRUE;
+    CK_KEY_TYPE keyType = CKK_AES;
+    CK_OBJECT_CLASS keyClass = CKO_SECRET_KEY;
+    CK_ULONG parameterSet = CKP_ML_KEM_512;
+    CK_ULONG ulValueLen = 10; // Intentionally incorrect value length for testing
+
+	// Just make sure that we finalize any previous tests
+	CRYPTOKI_F_PTR( C_Finalize(NULL_PTR) );
+
+	// Initialize the library and start the test.
+	rv = CRYPTOKI_F_PTR( C_Initialize(NULL_PTR) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Open read-write session
+	rv = CRYPTOKI_F_PTR( C_OpenSession(m_initializedTokenSlotID, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &hSessionRW) );
+	CPPUNIT_ASSERT(rv == CKR_OK);
+
+	// Login USER into the sessions so we can create a private objects
+	rv = CRYPTOKI_F_PTR( C_Login(hSessionRW,CKU_USER,m_userPin1,m_userPin1Length) );
+	CPPUNIT_ASSERT(rv==CKR_OK);
+
+	CK_OBJECT_HANDLE hPuk = CK_INVALID_HANDLE;
+	CK_OBJECT_HANDLE hPrk = CK_INVALID_HANDLE;
+
+    // Generate ML-KEM key pair
+    rv = generateMLKEM(parameterSet, hSessionRW, IN_SESSION, IS_PUBLIC, IN_SESSION, IS_PRIVATE, hPuk, hPrk);
+    CPPUNIT_ASSERT(rv == CKR_OK);
+    CPPUNIT_ASSERT(hPuk != CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(hPrk != CK_INVALID_HANDLE);
+
+    // Test encapsulation with specific key length
+    CK_ATTRIBUTE keyAttribs[] = {
+        { CKA_CLASS, &keyClass, sizeof(keyClass) },
+        { CKA_KEY_TYPE, &keyType, sizeof(keyType) },
+        { CKA_VALUE_LEN, &ulValueLen, sizeof(ulValueLen) },
+        { CKA_ENCRYPT, &bTrue, sizeof(bTrue) },
+        { CKA_DECRYPT, &bTrue, sizeof(bTrue) }
+    };
+
+    CK_OBJECT_HANDLE hEncapKey = CK_INVALID_HANDLE;
+    CK_BYTE cipherText[2048];
+    CK_ULONG ulCipherTextLen = sizeof(cipherText);
+    memset(cipherText, 0, sizeof(cipherText));
+
+    rv = CRYPTOKI_F_PTR(C_EncapsulateKey(
+        hSessionRW,
+        &mechanism,
+        hPuk,
+        keyAttribs,
+        sizeof(keyAttribs) / sizeof(CK_ATTRIBUTE),
+        cipherText,
+        &ulCipherTextLen,
+        &hEncapKey
+    ));
+    CPPUNIT_ASSERT(rv == CKR_ATTRIBUTE_VALUE_INVALID);
+    CPPUNIT_ASSERT(hEncapKey == CK_INVALID_HANDLE);
+    CPPUNIT_ASSERT(ulCipherTextLen == 0);
 
     rv = CRYPTOKI_F_PTR(C_DestroyObject(hSessionRW, hPuk));
     CPPUNIT_ASSERT(rv == CKR_OK);

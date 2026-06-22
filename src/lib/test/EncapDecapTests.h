@@ -22,6 +22,10 @@ class EncapDecapTests : public TestsBase
 #ifdef WITH_ML_KEM
 	CPPUNIT_TEST_PARAMETERIZED(testMLKEMEncapsulationDecapsulation, {CKP_ML_KEM_512, CKP_ML_KEM_768, CKP_ML_KEM_1024});
 	CPPUNIT_TEST_PARAMETERIZED(testMLKEMEncapsulationDecapsulationWithValueLen, {16, 24, 32});
+	CPPUNIT_TEST(testMLKEMEncapsulationDecapsulationWithValueLenWrong);
+	CPPUNIT_TEST(testMLKEMEncapsulationCiphertextIsNull);
+	CPPUNIT_TEST(testMLKEMDecapsulationCiphertextIsNull);
+	CPPUNIT_TEST(testMLKEMDecapsulationCiphertextLengthIsZero);
 #endif
 	CPPUNIT_TEST_SUITE_END();
 
@@ -29,6 +33,10 @@ public:
 #ifdef WITH_ML_KEM
 	void testMLKEMEncapsulationDecapsulation(CK_ULONG parameterSet);
 	void testMLKEMEncapsulationDecapsulationWithValueLen(CK_ULONG ulValueLen);
+	void testMLKEMEncapsulationDecapsulationWithValueLenWrong();
+	void testMLKEMEncapsulationCiphertextIsNull();
+	void testMLKEMDecapsulationCiphertextIsNull();
+	void testMLKEMDecapsulationCiphertextLengthIsZero();
 #endif
 
 protected:
