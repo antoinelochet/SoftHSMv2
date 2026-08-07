@@ -38,7 +38,6 @@
 #include "SymmetricKey.h"
 #include "MacAlgorithm.h"
 #include <openssl/evp.h>
-#include <openssl/hmac.h>
 
 class OSSLEVPMacAlgorithm : public MacAlgorithm
 {
@@ -70,7 +69,7 @@ protected:
 
 private:
 	// The current context
-	HMAC_CTX* curCTX;
+	EVP_MAC_CTX* curCTX;
 };
 
 #endif // !_SOFTHSM_V2_OSSLEVPMACALGORITHM_H

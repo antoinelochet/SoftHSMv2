@@ -16,7 +16,6 @@
 #include "CryptoFactory.h"
 #include "MLKEMParameters.h"
 #include "OSSLMLKEMKeyPair.h"
-#include "OSSLComp.h"
 #include "OSSLUtil.h"
 #include <algorithm>
 #include <openssl/core_names.h>

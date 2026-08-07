@@ -34,14 +34,56 @@
 
 #include "config.h"
 #include "OSSLEVPCMacAlgorithm.h"
-#include "OSSLComp.h"
 #include <openssl/err.h>
+#include <openssl/core_names.h>
+#include <openssl/params.h>
+
+namespace {
+
+// Create and initialise a CMAC context for the given cipher and key
+EVP_MAC_CTX* newCMACCTX(const EVP_CIPHER* cipher, const SymmetricKey* key)
+{
+	EVP_MAC* mac = EVP_MAC_fetch(NULL, "CMAC", NULL);
+	if (mac == NULL)
+	{
+		ERROR_MSG("Failed to fetch CMAC implementation");
+
+		return NULL;
+	}
+
+	EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
+	EVP_MAC_free(mac);
+	if (ctx == NULL)
+	{
+		ERROR_MSG("Failed to allocate space for EVP_MAC_CTX");
+
+		return NULL;
+	}
+
+	// EVP_MAC_init only reads the cipher name, so casting away const is safe
+	OSSL_PARAM params[] = {
+		OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_CIPHER, const_cast<char*>(EVP_CIPHER_get0_name(cipher)), 0),
+		OSSL_PARAM_construct_end()
+	};
+
+	if (!EVP_MAC_init(ctx, key->getKeyBits().const_byte_str(), key->getKeyBits().size(), params))
+	{
+		ERROR_MSG("EVP_MAC_init failed: %s", ERR_error_string(ERR_get_error(), NULL));
+
+		EVP_MAC_CTX_free(ctx);
+
+		return NULL;
+	}
+
+	return ctx;
+}
+
+}
 
 // Destructor
 OSSLEVPCMacAlgorithm::~OSSLEVPCMacAlgorithm()
 {
-	if (curCTX != NULL)
-		CMAC_CTX_free(curCTX);
+	EVP_MAC_CTX_free(curCTX);
 }
 
 // Signing functions
@@ -66,22 +108,9 @@ bool OSSLEVPCMacAlgorithm::signInit(const SymmetricKey* key)
 	}
 
 	// Initialize the context
-	curCTX = CMAC_CTX_new();
+	curCTX = newCMACCTX(cipher, key);
 	if (curCTX == NULL)
 	{
-		ERROR_MSG("Failed to allocate space for CMAC_CTX");
-
-		return false;
-	}
-
-	// Initialize EVP signing
-	if (!CMAC_Init(curCTX, key->getKeyBits().const_byte_str(), key->getKeyBits().size(), cipher, NULL))
-	{
-		ERROR_MSG("CMAC_Init failed: %s", ERR_error_string(ERR_get_error(), NULL));
-
-		CMAC_CTX_free(curCTX);
-		curCTX = NULL;
-
 		ByteString dummy;
 		MacAlgorithm::signFinal(dummy);
 
@@ -100,11 +129,11 @@ bool OSSLEVPCMacAlgorithm::signUpdate(const ByteString& dataToSign)
 
 	if (dataToSign.size() == 0) return true;
 
-	if (!CMAC_Update(curCTX, dataToSign.const_byte_str(), dataToSign.size()))
+	if (!EVP_MAC_update(curCTX, dataToSign.const_byte_str(), dataToSign.size()))
 	{
-		ERROR_MSG("CMAC_Update failed");
+		ERROR_MSG("EVP_MAC_update failed");
 
-		CMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		ByteString dummy;
@@ -126,11 +155,11 @@ bool OSSLEVPCMacAlgorithm::signFinal(ByteString& signature)
 	size_t outLen = getMacSize();
 	signature.resize(outLen);
 
-	if (!CMAC_Final(curCTX, &signature[0], &outLen))
+	if (!EVP_MAC_final(curCTX, &signature[0], &outLen, signature.size()))
 	{
-		ERROR_MSG("CMAC_Final failed");
+		ERROR_MSG("EVP_MAC_final failed");
 
-		CMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		return false;
@@ -138,7 +167,7 @@ bool OSSLEVPCMacAlgorithm::signFinal(ByteString& signature)
 
 	signature.resize(outLen);
 
-	CMAC_CTX_free(curCTX);
+	EVP_MAC_CTX_free(curCTX);
 	curCTX = NULL;
 
 	return true;
@@ -166,22 +195,9 @@ bool OSSLEVPCMacAlgorithm::verifyInit(const SymmetricKey* key)
 	}
 
 	// Initialize the context
-	curCTX = CMAC_CTX_new();
+	curCTX = newCMACCTX(cipher, key);
 	if (curCTX == NULL)
 	{
-		ERROR_MSG("Failed to allocate space for CMAC_CTX");
-
-		return false;
-	}
-
-	// Initialize EVP signing
-	if (!CMAC_Init(curCTX, key->getKeyBits().const_byte_str(), key->getKeyBits().size(), cipher, NULL))
-	{
-		ERROR_MSG("CMAC_Init failed: %s", ERR_error_string(ERR_get_error(), NULL));
-
-		CMAC_CTX_free(curCTX);
-		curCTX = NULL;
-
 		ByteString dummy;
 		MacAlgorithm::verifyFinal(dummy);
 
@@ -200,11 +216,11 @@ bool OSSLEVPCMacAlgorithm::verifyUpdate(const ByteString& originalData)
 
 	if (originalData.size() == 0) return true;
 
-	if (!CMAC_Update(curCTX, originalData.const_byte_str(), originalData.size()))
+	if (!EVP_MAC_update(curCTX, originalData.const_byte_str(), originalData.size()))
 	{
-		ERROR_MSG("CMAC_Update failed");
+		ERROR_MSG("EVP_MAC_update failed");
 
-		CMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		ByteString dummy;
@@ -227,17 +243,19 @@ bool OSSLEVPCMacAlgorithm::verifyFinal(ByteString& signature)
 	size_t outLen = getMacSize();
 	macResult.resize(outLen);
 
-	if (!CMAC_Final(curCTX, &macResult[0], &outLen))
+	if (!EVP_MAC_final(curCTX, &macResult[0], &outLen, macResult.size()))
 	{
-		ERROR_MSG("CMAC_Final failed");
+		ERROR_MSG("EVP_MAC_final failed");
 
-		CMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		return false;
 	}
 
-	CMAC_CTX_free(curCTX);
+	macResult.resize(outLen);
+
+	EVP_MAC_CTX_free(curCTX);
 	curCTX = NULL;
 
 	return macResult == signature;

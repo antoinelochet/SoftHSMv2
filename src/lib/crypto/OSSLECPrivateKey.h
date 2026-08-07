@@ -36,7 +36,7 @@
 #include "config.h"
 #include "ECPrivateKey.h"
 #include <openssl/bn.h>
-#include <openssl/ec.h>
+#include <openssl/evp.h>
 
 class OSSLECPrivateKey : public ECPrivateKey
 {
@@ -44,7 +44,7 @@ public:
 	// Constructors
 	OSSLECPrivateKey();
 
-	OSSLECPrivateKey(const EC_KEY* inECKEY);
+	OSSLECPrivateKey(const EVP_PKEY* inPKEY);
 
 	// Destructor
 	virtual ~OSSLECPrivateKey();
@@ -71,14 +71,17 @@ public:
 	virtual bool PKCS8Decode(const ByteString& ber);
 
 	// Set from OpenSSL representation
-	virtual void setFromOSSL(const EC_KEY* inECKEY);
+	virtual void setFromOSSL(const EVP_PKEY* inPKEY);
 
 	// Retrieve the OpenSSL representation of the key
-	EC_KEY* getOSSLKey();
+	EVP_PKEY* getOSSLKey();
 
 private:
 	// The internal OpenSSL representation
-	EC_KEY* eckey;
+	EVP_PKEY* pkey;
+
+	// Create the OpenSSL representation of the key
+	void createOSSLKey();
 };
 
 #endif // !_SOFTHSM_V2_OSSLECPRIVATEKEY_H

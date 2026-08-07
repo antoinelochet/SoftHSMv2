@@ -35,7 +35,7 @@
 
 #include "config.h"
 #include "ECPublicKey.h"
-#include <openssl/ec.h>
+#include <openssl/evp.h>
 
 class OSSLECPublicKey : public ECPublicKey
 {
@@ -43,7 +43,7 @@ public:
 	// Constructors
 	OSSLECPublicKey();
 
-	OSSLECPublicKey(const EC_KEY* inECKEY);
+	OSSLECPublicKey(const EVP_PKEY* inPKEY);
 
 	// Destructor
 	virtual ~OSSLECPublicKey();
@@ -62,14 +62,17 @@ public:
 	virtual void setQ(const ByteString& inQ);
 
 	// Set from OpenSSL representation
-	virtual void setFromOSSL(const EC_KEY* inECKEY);
+	virtual void setFromOSSL(const EVP_PKEY* inPKEY);
 
 	// Retrieve the OpenSSL representation of the key
-	EC_KEY* getOSSLKey();
+	EVP_PKEY* getOSSLKey();
 
 private:
 	// The internal OpenSSL representation
-	EC_KEY* eckey;
+	EVP_PKEY* pkey;
+
+	// Create the OpenSSL representation of the key
+	void createOSSLKey();
 };
 
 #endif // !_SOFTHSM_V2_OSSLDSAPUBLICKEY_H

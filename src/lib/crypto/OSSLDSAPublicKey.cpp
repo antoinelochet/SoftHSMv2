@@ -33,66 +33,65 @@
 #include "config.h"
 #include "log.h"
 #include "OSSLDSAPublicKey.h"
-#include "OSSLComp.h"
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
-#ifdef WITH_FIPS
-#include <openssl/fips.h>
-#endif
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
 #include <string.h>
 
 // Constructors
 OSSLDSAPublicKey::OSSLDSAPublicKey()
 {
-	dsa = NULL;
+	pkey = NULL;
 }
 
-OSSLDSAPublicKey::OSSLDSAPublicKey(const DSA* inDSA)
+OSSLDSAPublicKey::OSSLDSAPublicKey(const EVP_PKEY* inPKEY)
 {
-	dsa = NULL;
+	pkey = NULL;
 
-	setFromOSSL(inDSA);
+	setFromOSSL(inPKEY);
 }
 
 // Destructor
 OSSLDSAPublicKey::~OSSLDSAPublicKey()
 {
-	DSA_free(dsa);
+	EVP_PKEY_free(pkey);
 }
 
 // The type
 /*static*/ const char* OSSLDSAPublicKey::type = "OpenSSL DSA Public Key";
 
 // Set from OpenSSL representation
-void OSSLDSAPublicKey::setFromOSSL(const DSA* inDSA)
+void OSSLDSAPublicKey::setFromOSSL(const EVP_PKEY* inPKEY)
 {
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_q = NULL;
-	const BIGNUM* bn_g = NULL;
-	const BIGNUM* bn_pub_key = NULL;
+	BIGNUM* bn_p = NULL;
+	BIGNUM* bn_q = NULL;
+	BIGNUM* bn_g = NULL;
+	BIGNUM* bn_pub_key = NULL;
 
-	DSA_get0_pqg(inDSA, &bn_p, &bn_q, &bn_g);
-	DSA_get0_key(inDSA, &bn_pub_key, NULL);
-
-	if (bn_p)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_FFC_P, &bn_p))
 	{
 		ByteString inP = OSSL::bn2ByteString(bn_p);
 		setP(inP);
+		BN_free(bn_p);
 	}
-	if (bn_q)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_FFC_Q, &bn_q))
 	{
 		ByteString inQ = OSSL::bn2ByteString(bn_q);
 		setQ(inQ);
+		BN_free(bn_q);
 	}
-	if (bn_g)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_FFC_G, &bn_g))
 	{
 		ByteString inG = OSSL::bn2ByteString(bn_g);
 		setG(inG);
+		BN_free(bn_g);
 	}
-	if (bn_pub_key)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_PUB_KEY, &bn_pub_key))
 	{
 		ByteString inY = OSSL::bn2ByteString(bn_pub_key);
 		setY(inY);
+		BN_free(bn_pub_key);
 	}
 }
 
@@ -107,87 +106,77 @@ void OSSLDSAPublicKey::setP(const ByteString& inP)
 {
 	DSAPublicKey::setP(inP);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 void OSSLDSAPublicKey::setQ(const ByteString& inQ)
 {
 	DSAPublicKey::setQ(inQ);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 void OSSLDSAPublicKey::setG(const ByteString& inG)
 {
 	DSAPublicKey::setG(inG);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 void OSSLDSAPublicKey::setY(const ByteString& inY)
 {
 	DSAPublicKey::setY(inY);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 // Retrieve the OpenSSL representation of the key
-DSA* OSSLDSAPublicKey::getOSSLKey()
+EVP_PKEY* OSSLDSAPublicKey::getOSSLKey()
 {
-	if (dsa == NULL) createOSSLKey();
+	if (pkey == NULL) createOSSLKey();
 
-	return dsa;
+	return pkey;
 }
 
 // Create the OpenSSL representation of the key
 void OSSLDSAPublicKey::createOSSLKey()
 {
-	if (dsa != NULL) return;
-
-	dsa = DSA_new();
-	if (dsa == NULL)
-	{
-		ERROR_MSG("Could not create DSA object");
-		return;
-	}
-
-	// Use the OpenSSL implementation and not any engine
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-		DSA_set_method(dsa, FIPS_dsa_openssl());
-	else
-		DSA_set_method(dsa, DSA_OpenSSL());
-#else
-	DSA_set_method(dsa, DSA_OpenSSL());
-#endif
-
-#else
-	DSA_set_method(dsa, DSA_OpenSSL());
-#endif
+	if (pkey != NULL) return;
 
 	BIGNUM* bn_p = OSSL::byteString2bn(p);
 	BIGNUM* bn_q = OSSL::byteString2bn(q);
 	BIGNUM* bn_g = OSSL::byteString2bn(g);
 	BIGNUM* bn_pub_key = OSSL::byteString2bn(y);
 
-	DSA_set0_pqg(dsa, bn_p, bn_q, bn_g);
-	DSA_set0_key(dsa, bn_pub_key, NULL);
+	OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+	OSSL_PARAM* params = NULL;
+	EVP_PKEY_CTX* ctx = NULL;
+
+	if (bld == NULL ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_P, bn_p) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_Q, bn_q) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_G, bn_g) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PUB_KEY, bn_pub_key) ||
+	    (params = OSSL_PARAM_BLD_to_param(bld)) == NULL ||
+	    (ctx = EVP_PKEY_CTX_new_from_name(NULL, "DSA", NULL)) == NULL ||
+	    EVP_PKEY_fromdata_init(ctx) <= 0 ||
+	    EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) <= 0)
+	{
+		ERROR_MSG("Could not create the DSA public key");
+
+		EVP_PKEY_free(pkey);
+		pkey = NULL;
+	}
+
+	EVP_PKEY_CTX_free(ctx);
+	OSSL_PARAM_free(params);
+	OSSL_PARAM_BLD_free(bld);
+	BN_free(bn_p);
+	BN_free(bn_q);
+	BN_free(bn_g);
+	BN_free(bn_pub_key);
 }

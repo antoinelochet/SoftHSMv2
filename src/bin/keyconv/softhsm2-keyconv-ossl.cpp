@@ -33,7 +33,6 @@
 #include <config.h>
 #define KEYCONV_OSSL
 #include "softhsm2-keyconv.h"
-#include "OSSLComp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +46,8 @@
 #include <openssl/pkcs12.h>
 #include <openssl/dsa.h>
 #include <openssl/rsa.h>
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
 
 // Init OpenSSL
 void crypto_init()
@@ -71,7 +72,6 @@ void crypto_final()
 // Save the RSA key as a PKCS#8 file
 int save_rsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 {
-	RSA* rsa = NULL;
 	EVP_PKEY* ossl_pkey = NULL;
 	PKCS8_PRIV_KEY_INFO* p8inf = NULL;
 	BIO* out = NULL;
@@ -95,7 +95,6 @@ int save_rsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 		return 1;
 	}
 
-	rsa = RSA_new();
 	BIGNUM* bn_p =    BN_bin2bn((unsigned char*)pkey[TAG_PRIME1].big,  pkey[TAG_PRIME1].size, NULL);
 	BIGNUM* bn_q =    BN_bin2bn((unsigned char*)pkey[TAG_PRIME2].big,  pkey[TAG_PRIME2].size, NULL);
 	BIGNUM* bn_d =    BN_bin2bn((unsigned char*)pkey[TAG_PRIVEXP].big, pkey[TAG_PRIVEXP].size, NULL);
@@ -104,21 +103,46 @@ int save_rsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 	BIGNUM* bn_dmp1 = BN_bin2bn((unsigned char*)pkey[TAG_EXP1].big,    pkey[TAG_EXP1].size, NULL);
 	BIGNUM* bn_dmq1 = BN_bin2bn((unsigned char*)pkey[TAG_EXP2].big,    pkey[TAG_EXP2].size, NULL);
 	BIGNUM* bn_iqmp = BN_bin2bn((unsigned char*)pkey[TAG_COEFF].big,   pkey[TAG_COEFF].size, NULL);
-	RSA_set0_factors(rsa, bn_p, bn_q);
-	RSA_set0_crt_params(rsa, bn_dmp1, bn_dmq1, bn_iqmp);
-	RSA_set0_key(rsa, bn_n, bn_e, bn_d);
 
-	ossl_pkey = EVP_PKEY_new();
+	OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+	OSSL_PARAM* params = NULL;
+	EVP_PKEY_CTX* ctx = NULL;
 
-	// Convert RSA to EVP_PKEY
-	if (!EVP_PKEY_set1_RSA(ossl_pkey, rsa))
+	if (bld == NULL ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_N, bn_n) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_E, bn_e) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_D, bn_d) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_FACTOR1, bn_p) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_FACTOR2, bn_q) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_EXPONENT1, bn_dmp1) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_EXPONENT2, bn_dmq1) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_COEFFICIENT1, bn_iqmp) ||
+	    (params = OSSL_PARAM_BLD_to_param(bld)) == NULL ||
+	    (ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL)) == NULL ||
+	    EVP_PKEY_fromdata_init(ctx) <= 0 ||
+	    EVP_PKEY_fromdata(ctx, &ossl_pkey, EVP_PKEY_KEYPAIR, params) <= 0)
 	{
 		fprintf(stderr, "ERROR: Could not convert RSA key to EVP_PKEY.\n");
-		RSA_free(rsa);
+		result = 1;
+	}
+
+	EVP_PKEY_CTX_free(ctx);
+	OSSL_PARAM_free(params);
+	OSSL_PARAM_BLD_free(bld);
+	BN_clear_free(bn_p);
+	BN_clear_free(bn_q);
+	BN_clear_free(bn_d);
+	BN_clear_free(bn_n);
+	BN_clear_free(bn_e);
+	BN_clear_free(bn_dmp1);
+	BN_clear_free(bn_dmq1);
+	BN_clear_free(bn_iqmp);
+
+	if (result)
+	{
 		EVP_PKEY_free(ossl_pkey);
 		return 1;
 	}
-	RSA_free(rsa);
 
 	// Convert EVP_PKEY to PKCS#8
 	if (!(p8inf = EVP_PKEY2PKCS8(ossl_pkey)))
@@ -170,7 +194,6 @@ int save_rsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 // Save the DSA key as a PKCS#8 file
 int save_dsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 {
-	DSA* dsa = NULL;
 	EVP_PKEY* ossl_pkey = NULL;
 	PKCS8_PRIV_KEY_INFO* p8inf = NULL;
 	BIO* out = NULL;
@@ -191,27 +214,45 @@ int save_dsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 		return 1;
 	}
 
-	dsa = DSA_new();
 	BIGNUM* bn_p =        BN_bin2bn((unsigned char*)pkey[TAG_PRIME].big,    pkey[TAG_PRIME].size, NULL);
 	BIGNUM* bn_q =        BN_bin2bn((unsigned char*)pkey[TAG_SUBPRIME].big, pkey[TAG_SUBPRIME].size, NULL);
 	BIGNUM* bn_g =        BN_bin2bn((unsigned char*)pkey[TAG_BASE].big,     pkey[TAG_BASE].size, NULL);
 	BIGNUM* bn_priv_key = BN_bin2bn((unsigned char*)pkey[TAG_PRIVVAL].big,  pkey[TAG_PRIVVAL].size, NULL);
 	BIGNUM* bn_pub_key =  BN_bin2bn((unsigned char*)pkey[TAG_PUBVAL].big,   pkey[TAG_PUBVAL].size, NULL);
 
-	DSA_set0_pqg(dsa, bn_p, bn_q, bn_g);
-	DSA_set0_key(dsa, bn_pub_key, bn_priv_key);
+	OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+	OSSL_PARAM* params = NULL;
+	EVP_PKEY_CTX* ctx = NULL;
 
-	ossl_pkey = EVP_PKEY_new();
-
-	// Convert DSA to EVP_PKEY
-	if (!EVP_PKEY_set1_DSA(ossl_pkey, dsa))
+	if (bld == NULL ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_P, bn_p) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_Q, bn_q) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_G, bn_g) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PUB_KEY, bn_pub_key) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PRIV_KEY, bn_priv_key) ||
+	    (params = OSSL_PARAM_BLD_to_param(bld)) == NULL ||
+	    (ctx = EVP_PKEY_CTX_new_from_name(NULL, "DSA", NULL)) == NULL ||
+	    EVP_PKEY_fromdata_init(ctx) <= 0 ||
+	    EVP_PKEY_fromdata(ctx, &ossl_pkey, EVP_PKEY_KEYPAIR, params) <= 0)
 	{
 		fprintf(stderr, "ERROR: Could not convert DSA key to EVP_PKEY.\n");
-		DSA_free(dsa);
+		result = 1;
+	}
+
+	EVP_PKEY_CTX_free(ctx);
+	OSSL_PARAM_free(params);
+	OSSL_PARAM_BLD_free(bld);
+	BN_clear_free(bn_p);
+	BN_clear_free(bn_q);
+	BN_clear_free(bn_g);
+	BN_clear_free(bn_priv_key);
+	BN_clear_free(bn_pub_key);
+
+	if (result)
+	{
 		EVP_PKEY_free(ossl_pkey);
 		return 1;
 	}
-	DSA_free(dsa);
 
 	// Convert EVP_PKEY to PKCS#8
 	if (!(p8inf = EVP_PKEY2PKCS8(ossl_pkey)))

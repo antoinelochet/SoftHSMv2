@@ -46,9 +46,7 @@
 
 #ifdef WITH_OPENSSL
 #include "OSSLCryptoFactory.h"
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
-#endif
 #else
 #include "BotanCryptoFactory.h"
 #endif
@@ -78,7 +76,7 @@ std::auto_ptr<BotanCryptoFactory> BotanCryptoFactory::instance(NULL);
 
 int main(int /*argc*/, char** /*argv*/)
 {
-#if defined(WITH_OPENSSL) && OPENSSL_VERSION_NUMBER >= 0x30000000L
+#ifdef WITH_OPENSSL
 	OSSL_PROVIDER_load(NULL, "legacy");
 	OSSL_PROVIDER_load(NULL, "default");
 #endif

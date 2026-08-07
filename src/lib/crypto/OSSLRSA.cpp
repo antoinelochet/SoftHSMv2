@@ -1795,11 +1795,7 @@ bool OSSLRSA::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParameter
 	}
 	if ((EVP_PKEY_keygen_init(ctx) <= 0) ||
 		(EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, params->getBitLength()) <= 0) ||
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 		(EVP_PKEY_CTX_set1_rsa_keygen_pubexp(ctx, bn_e) <= 0))
-#else
-		(EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, bn_e) <= 0))
-#endif
 	{
 		ERROR_MSG("Failed  to set RSA key generation parameters (0x%08X)", ERR_get_error());
 		EVP_PKEY_CTX_free(ctx);
@@ -1810,16 +1806,12 @@ bool OSSLRSA::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParameter
 	{
 		ERROR_MSG("RSA key generation failed (0x%08X)", ERR_get_error());
 		EVP_PKEY_CTX_free(ctx);
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 		BN_free(bn_e);
-#endif
 		return false;
 	}
 
 	EVP_PKEY_CTX_free(ctx);
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	BN_free(bn_e);
-#endif
 	// Create an asymmetric key-pair object to return
 	OSSLRSAKeyPair* kp = new OSSLRSAKeyPair();
 

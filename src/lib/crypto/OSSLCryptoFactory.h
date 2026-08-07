@@ -42,7 +42,9 @@
 #include "RNG.h"
 #include <memory>
 #include <openssl/conf.h>
-#if !defined(WITHOUT_OPENSSL_ENGINES) && !defined(OPENSSL_NO_ENGINES)
+// ENGINEs are deprecated as of OpenSSL 3.0 and superseded by providers, but GOST
+// is still only reachable through an engine.
+#if !defined(WITHOUT_OPENSSL_ENGINES) && !defined(OPENSSL_NO_ENGINES) && defined(WITH_GOST)
 #define WITH_ENGINES 1
 #include <openssl/engine.h>
 #endif
@@ -96,10 +98,6 @@ private:
 	static std::auto_ptr<OSSLCryptoFactory> instance;
 #endif
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	bool setLockingCallback;
-#endif
-
 #ifdef WITH_FIPS
 	// The FIPS 140-2 selftest status
 	static bool FipsSelfTestStatus;
@@ -109,13 +107,8 @@ private:
 	RNG* rng;
 
 #ifdef WITH_ENGINES
-	// And RDRAND engine to use with it
-	ENGINE *rdrand_engine;
-
-#ifdef WITH_GOST
 	// The GOST engine
 	ENGINE *eg;
-#endif
 #endif
 };
 

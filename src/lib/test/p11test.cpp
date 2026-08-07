@@ -51,9 +51,7 @@
 #endif
 #ifdef WITH_OPENSSL
 #include <openssl/opensslv.h>
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
-#endif
 #endif
 
 class MyListener : public CPPUNIT_NS::TestListener {
@@ -78,7 +76,7 @@ int main(int /*argc*/, char**const /*argv*/)
 #endif
 #endif
 
-#if defined(WITH_OPENSSL) && OPENSSL_VERSION_NUMBER >= 0x30000000L
+#ifdef WITH_OPENSSL
 	OSSL_PROVIDER_load(NULL, "legacy");
 	OSSL_PROVIDER_load(NULL, "default");
 #endif

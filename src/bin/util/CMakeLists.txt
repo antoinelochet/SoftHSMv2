@@ -17,9 +17,7 @@ set(SOURCES softhsm2-util.cpp
             )
 
 if(WITH_OPENSSL)
-    list(APPEND SOURCES softhsm2-util-ossl.cpp
-                        ${PROJECT_SOURCE_DIR}/../../lib/crypto/OSSLComp.cpp
-                        )
+    list(APPEND SOURCES softhsm2-util-ossl.cpp)
 endif(WITH_OPENSSL)
 
 if(WITH_BOTAN)

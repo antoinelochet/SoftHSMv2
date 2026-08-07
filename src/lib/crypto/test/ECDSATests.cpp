@@ -99,6 +99,74 @@ void ECDSATests::testKeyGeneration()
 	}
 }
 
+// Explicit domain parameters must survive key generation and be usable for
+// signing, since nothing validates CKA_EC_PARAMS as a named curve
+void ECDSATests::testExplicitParameters()
+{
+	AsymmetricKeyPair* kp;
+
+	// Curves in explicit form, as emitted by "openssl ecparam -param_enc explicit"
+	std::vector<ByteString> curves;
+	// prime256v1, carries a seed
+	curves.push_back(ByteString("3081f7020101302c06072a8648ce3d0101022100ffffffff00000001000000000000000000000000ffffffffffffffffffffffff305b0420ffffffff00000001000000000000000000000000fffffffffffffffffffffffc04205ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b031500c49d360886e704936a6678e1139d26b7819f7e900441046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551020101"));
+	// secp256k1, no seed
+	curves.push_back(ByteString("3081e0020101302c06072a8648ce3d0101022100fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f3044042000000000000000000000000000000000000000000000000000000000000000000420000000000000000000000000000000000000000000000000000000000000000704410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141020101"));
+
+	for (std::vector<ByteString>::iterator c = curves.begin(); c != curves.end(); c++)
+	{
+		ECParameters* p = new ECParameters;
+		p->setEC(*c);
+
+		CPPUNIT_ASSERT(ecdsa->generateKeyPair(&kp, p));
+
+		ECPublicKey* pub = (ECPublicKey*) kp->getPublicKey();
+		ECPrivateKey* priv = (ECPrivateKey*) kp->getPrivateKey();
+
+		// The encoding must come back byte for byte, not collapsed to a named curve
+		CPPUNIT_ASSERT(pub->getEC() == *c);
+		CPPUNIT_ASSERT(priv->getEC() == *c);
+		CPPUNIT_ASSERT(pub->getQ().size() != 0);
+		CPPUNIT_ASSERT(priv->getD().size() != 0);
+
+		// The generated key has to actually work
+		HashAlgorithm* hash = CryptoFactory::i()->getHashAlgorithm(HashAlgo::SHA256);
+		CPPUNIT_ASSERT(hash != NULL);
+
+		ByteString dataToSign;
+		RNG* rng = CryptoFactory::i()->getRNG();
+		CPPUNIT_ASSERT(rng != NULL);
+		CPPUNIT_ASSERT(rng->generateRandom(dataToSign, 123));
+
+		CPPUNIT_ASSERT(hash->hashInit());
+		CPPUNIT_ASSERT(hash->hashUpdate(dataToSign));
+		ByteString hResult;
+		CPPUNIT_ASSERT(hash->hashFinal(hResult));
+
+		ByteString sig;
+		CPPUNIT_ASSERT(ecdsa->sign(priv, hResult, sig, AsymMech::ECDSA));
+		CPPUNIT_ASSERT(ecdsa->verify(pub, hResult, sig, AsymMech::ECDSA));
+
+		// A tampered signature must not verify
+		sig[sig.size() - 1] ^= 0x01;
+		CPPUNIT_ASSERT(!ecdsa->verify(pub, hResult, sig, AsymMech::ECDSA));
+
+		// PKCS#8 has to preserve the explicit parameters too
+		ByteString pkcs8 = priv->PKCS8Encode();
+		CPPUNIT_ASSERT(pkcs8.size() != 0);
+
+		ECPrivateKey* dPriv = (ECPrivateKey*) ecdsa->newPrivateKey();
+		CPPUNIT_ASSERT(dPriv != NULL);
+		CPPUNIT_ASSERT(dPriv->PKCS8Decode(pkcs8));
+		CPPUNIT_ASSERT(priv->getEC() == dPriv->getEC());
+		CPPUNIT_ASSERT(priv->getD() == dPriv->getD());
+
+		CryptoFactory::i()->recycleHashAlgorithm(hash);
+		ecdsa->recyclePrivateKey(dPriv);
+		ecdsa->recycleParameters(p);
+		ecdsa->recycleKeyPair(kp);
+	}
+}
+
 void ECDSATests::testSerialisation()
 {
 	// Get prime256v1 domain parameters

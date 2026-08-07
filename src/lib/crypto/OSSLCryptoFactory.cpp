@@ -87,52 +87,9 @@
 bool OSSLCryptoFactory::FipsSelfTestStatus = false;
 #endif
 
-static unsigned nlocks;
-static Mutex** locks;
-
-// Mutex callback
-void lock_callback(int mode, int n, const char* file, int line)
-{
-	if ((unsigned) n >= nlocks)
-	{
-		ERROR_MSG("out of range [0..%u[ lock %d at %s:%d",
-			  nlocks, n, file, line);
-
-		return;
-	}
-
-	Mutex* mtx = locks[(unsigned) n];
-
-	if (mode & CRYPTO_LOCK)
-	{
-		mtx->lock();
-	}
-	else
-	{
-		mtx->unlock();
-	}
-}
-
 // Constructor
 OSSLCryptoFactory::OSSLCryptoFactory()
 {
-	// Multi-thread support
-	nlocks = CRYPTO_num_locks();
-	locks = new Mutex*[nlocks];
-	for (unsigned i = 0; i < nlocks; i++)
-	{
-		locks[i] = MutexFactory::i()->getMutex();
-	}
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	setLockingCallback = false;
-	if (CRYPTO_get_locking_callback() == NULL)
-	{
-		CRYPTO_set_locking_callback(lock_callback);
-		setLockingCallback = true;
-	}
-#endif
-
 #ifdef WITH_FIPS
 	// Already in FIPS mode on reenter (avoiding selftests)
 	if (!FIPS_mode())
@@ -153,49 +110,17 @@ OSSLCryptoFactory::OSSLCryptoFactory()
 	// Initialise OpenSSL
 	OpenSSL_add_all_algorithms();
 
-#ifdef WITH_ENGINES
-#if !( OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER) )
-	// Make sure RDRAND is loaded first
-	ENGINE_load_rdrand();
-#endif
-	// Locate the engine
-	rdrand_engine = ENGINE_by_id("rdrand");
-	// Use RDRAND if available
-	if (rdrand_engine != NULL)
-	{
-		// Initialize RDRAND engine
-		if (!ENGINE_init(rdrand_engine))
-		{
-			WARNING_MSG("ENGINE_init returned %lu\n", ERR_get_error());
-		}
-		// Set RDRAND engine as the default for RAND_ methods
-		else if (!ENGINE_set_default(rdrand_engine, ENGINE_METHOD_RAND))
-		{
-			WARNING_MSG("ENGINE_set_default returned %lu\n", ERR_get_error());
-		}
-	}
-	else
-	{
-		// Clear OpenSSL error queue if rdrand engine is unavailable
-		ERR_clear_error();
-	}
-#endif
-
 	// Initialise the one-and-only RNG
 	rng = new OSSLRNG();
 
-#if defined(WITH_ENGINES) && defined(WITH_GOST)
+#ifdef WITH_ENGINES
 	// Load engines
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	ENGINE_load_builtin_engines();
-#else
 	OPENSSL_init_crypto(OPENSSL_INIT_ENGINE_ALL_BUILTIN |
 			    OPENSSL_INIT_ENGINE_RDRAND |
 			    OPENSSL_INIT_LOAD_CRYPTO_STRINGS |
 			    OPENSSL_INIT_ADD_ALL_CIPHERS |
 			    OPENSSL_INIT_ADD_ALL_DIGESTS |
 			    OPENSSL_INIT_LOAD_CONFIG, NULL);
-#endif
 
 	// Initialise the GOST engine
 	eg = ENGINE_by_id("gost");
@@ -245,56 +170,29 @@ err:
 // Destructor
 OSSLCryptoFactory::~OSSLCryptoFactory()
 {
-	bool ossl_shutdown = false;
-
-#if defined(WITH_ENGINES) && OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-	// OpenSSL 1.1.0+ will register an atexit() handler to run
-	// OPENSSL_cleanup(). If that has already happened we must
-	// not attempt to free any ENGINEs because they'll already
-	// have been destroyed and the use-after-free would cause
+#ifdef WITH_ENGINES
+	// OpenSSL registers an atexit() handler to run OPENSSL_cleanup(). If that
+	// has already happened we must not attempt to free any ENGINEs because
+	// they'll already have been destroyed and the use-after-free would cause
 	// a deadlock or crash.
 	//
 	// Detect that situation because reinitialisation will fail
 	// after OPENSSL_cleanup() has run.
 	(void)ERR_set_mark();
-	ossl_shutdown = !OPENSSL_init_crypto(OPENSSL_INIT_ENGINE_RDRAND, NULL);
+	bool ossl_shutdown = !OPENSSL_init_crypto(OPENSSL_INIT_ENGINE_RDRAND, NULL);
 	(void)ERR_pop_to_mark();
-#endif
-	if (!ossl_shutdown)
+
+	if (!ossl_shutdown && eg != NULL)
 	{
-#ifdef WITH_ENGINES
-#ifdef WITH_GOST
 		// Finish the GOST engine
-		if (eg != NULL)
-		{
-			ENGINE_finish(eg);
-			ENGINE_free(eg);
-			eg = NULL;
-		}
-#endif
-
-		// Finish the rd_rand engine
-		ENGINE_finish(rdrand_engine);
-		ENGINE_free(rdrand_engine);
-		rdrand_engine = NULL;
-#endif
-
-		// Recycle locks
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-		if (setLockingCallback)
-		{
-			CRYPTO_set_locking_callback(NULL);
-		}
-#endif
+		ENGINE_finish(eg);
+		ENGINE_free(eg);
+		eg = NULL;
 	}
+#endif
+
 	// Destroy the one-and-only RNG
 	delete rng;
-
-	for (unsigned i = 0; i < nlocks; i++)
-	{
-		MutexFactory::i()->recycleMutex(locks[i]);
-	}
-	delete[] locks;
 }
 
 // Return the one-and-only instance

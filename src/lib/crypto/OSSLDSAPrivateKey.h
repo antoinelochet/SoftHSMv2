@@ -35,7 +35,7 @@
 
 #include "config.h"
 #include "DSAPrivateKey.h"
-#include <openssl/dsa.h>
+#include <openssl/evp.h>
 
 class OSSLDSAPrivateKey : public DSAPrivateKey
 {
@@ -43,7 +43,7 @@ public:
 	// Constructors
 	OSSLDSAPrivateKey();
 
-	OSSLDSAPrivateKey(const DSA* inDSA);
+	OSSLDSAPrivateKey(const EVP_PKEY* inPKEY);
 
 	// Destructor
 	virtual ~OSSLDSAPrivateKey();
@@ -69,14 +69,14 @@ public:
 	virtual bool PKCS8Decode(const ByteString& ber);
 
 	// Set from OpenSSL representation
-	virtual void setFromOSSL(const DSA* inDSA);
+	virtual void setFromOSSL(const EVP_PKEY* inPKEY);
 
 	// Retrieve the OpenSSL representation of the key
-	DSA* getOSSLKey();
+	EVP_PKEY* getOSSLKey();
 
 private:
 	// The internal OpenSSL representation
-	DSA* dsa;
+	EVP_PKEY* pkey;
 
 	// Create the OpenSSL representation of the key
 	void createOSSLKey();

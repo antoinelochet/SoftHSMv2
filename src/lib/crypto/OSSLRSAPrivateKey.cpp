@@ -32,16 +32,11 @@
 
 #include "config.h"
 #include "log.h"
-#include "OSSLComp.h"
 #include "OSSLRSAPrivateKey.h"
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
 #include <openssl/x509.h>
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/param_build.h>
-#else
-#include <openssl/rsa.h>
-#endif
 #ifdef WITH_FIPS
 #include <openssl/fips.h>
 #endif
@@ -77,7 +72,6 @@ void OSSLRSAPrivateKey::setFromOSSL(const EVP_PKEY* inRSA)
 		ERROR_MSG("Null RSA key");
 		return;
 	}  
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	BIGNUM* bn_p = NULL;
 	BIGNUM* bn_q = NULL;
 	BIGNUM* bn_dmp1 = NULL;
@@ -135,55 +129,6 @@ void OSSLRSAPrivateKey::setFromOSSL(const EVP_PKEY* inRSA)
 		setD(OSSL::bn2ByteString(bn_d));
 		BN_free(bn_d);
 	}
-#else
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_q = NULL;
-	const BIGNUM* bn_dmp1 = NULL;
-	const BIGNUM* bn_dmq1 = NULL;
-	const BIGNUM* bn_iqmp = NULL;
-	const BIGNUM* bn_n = NULL;
-	const BIGNUM* bn_e = NULL;
-	const BIGNUM* bn_d = NULL;
-	const RSA* inRSA1 = EVP_PKEY_get0_RSA(const_cast<EVP_PKEY *>(inRSA));
-	if (inRSA1 != NULL)
-	{
-		RSA_get0_factors(inRSA1, &bn_p, &bn_q);
-		RSA_get0_crt_params(inRSA1, &bn_dmp1, &bn_dmq1, &bn_iqmp);
-		RSA_get0_key(inRSA1, &bn_n, &bn_e, &bn_d);
-	}
-	if (bn_p)
-	{
-		setP(OSSL::bn2ByteString(bn_p));
-	}
-	if (bn_q)
-	{
-		setQ(OSSL::bn2ByteString(bn_q));
-	}
-	if (bn_dmp1)
-	{
-		setDP1(OSSL::bn2ByteString(bn_dmp1));
-	}
-	if (bn_dmq1)
-	{
-		setDQ1(OSSL::bn2ByteString(bn_dmq1));
-	}
-	if (bn_iqmp)
-	{
-		setPQ(OSSL::bn2ByteString(bn_iqmp));
-	}
-	if (bn_n)
-	{
-		setN(OSSL::bn2ByteString(bn_n));
-	}
-	if (bn_e)
-	{
-		setE(OSSL::bn2ByteString(bn_e));
-	}
-	if (bn_d)
-	{
-		setD(OSSL::bn2ByteString(bn_d));
-	}
-#endif
 }
 
 // Check if the key is of the given type
@@ -351,7 +296,6 @@ void OSSLRSAPrivateKey::createOSSLKey()
 	BIGNUM* bn_d = OSSL::byteString2bn(d);
 	BIGNUM* bn_e = OSSL::byteString2bn(e);
 
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	OSSL_PARAM_BLD* param_bld = OSSL_PARAM_BLD_new();
 	OSSL_PARAM* params = NULL;
 	bool bBuildErr = false;
@@ -410,54 +354,4 @@ void OSSLRSAPrivateKey::createOSSLKey()
 	}
 	OSSL_PARAM_free(params);
 	EVP_PKEY_CTX_free(ctx);
-
-#else
-	RSA* rsa1 = RSA_new();
-	if (rsa1 == NULL)
-	{
-		BN_free(bn_n);
-		BN_free(bn_e);
-		BN_free(bn_d);
-		BN_free(bn_p);
-		BN_free(bn_q);
-		BN_free(bn_dmp1);
-		BN_free(bn_dmq1);
-		BN_free(bn_iqmp);
-		ERROR_MSG("Could not build RSA object");
-		return;
-	}
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	// Use the OpenSSL implementation and not any engine
-
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-		RSA_set_method(rsa1, FIPS_rsa_pkcs1_ssleay());
-	else
-		RSA_set_method(rsa1, RSA_PKCS1_SSLeay());
-#else
-	RSA_set_method(rsa1, RSA_PKCS1_SSLeay());
-#endif
-
-#else
-	RSA_set_method(rsa1, RSA_PKCS1_OpenSSL());
-#endif
-	RSA_set0_factors(rsa1, bn_p, bn_q);
-	RSA_set0_crt_params(rsa1, bn_dmp1, bn_dmq1, bn_iqmp);
-	RSA_set0_key(rsa1, bn_n, bn_e, bn_d);
-	rsa = EVP_PKEY_new();
-	if (rsa == NULL)
-	{
-		ERROR_MSG("Could not build RSA PKEY");
-		RSA_free(rsa1);
-		return;
-	}
-	if (EVP_PKEY_assign_RSA(rsa, rsa1) <= 0)
-	{
-		ERROR_MSG("Could not assign RSA PKEY");
-		RSA_free(rsa1);
-		EVP_PKEY_free(rsa);
-		rsa = NULL;
-		return;
-	}
-#endif
 }

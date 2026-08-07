@@ -37,7 +37,6 @@
 #include "CryptoFactory.h"
 #include "ECParameters.h"
 #include "OSSLEDKeyPair.h"
-#include "OSSLComp.h"
 #include "OSSLUtil.h"
 #include <algorithm>
 #include <openssl/evp.h>

@@ -37,30 +37,26 @@
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
 #include <openssl/x509.h>
+#include <openssl/core_names.h>
+#include <string.h>
 
 // Constructors
 OSSLECPrivateKey::OSSLECPrivateKey()
 {
-	eckey = EC_KEY_new();
-
-	// For PKCS#8 encoding
-	EC_KEY_set_enc_flags(eckey, EC_PKEY_NO_PUBKEY);
+	pkey = NULL;
 }
 
-OSSLECPrivateKey::OSSLECPrivateKey(const EC_KEY* inECKEY)
+OSSLECPrivateKey::OSSLECPrivateKey(const EVP_PKEY* inPKEY)
 {
-	eckey = EC_KEY_new();
+	pkey = NULL;
 
-	// For PKCS#8 encoding
-	EC_KEY_set_enc_flags(eckey, EC_PKEY_NO_PUBKEY);
-
-	setFromOSSL(inECKEY);
+	setFromOSSL(inPKEY);
 }
 
 // Destructor
 OSSLECPrivateKey::~OSSLECPrivateKey()
 {
-	EC_KEY_free(eckey);
+	EVP_PKEY_free(pkey);
 }
 
 // The type
@@ -69,38 +65,41 @@ OSSLECPrivateKey::~OSSLECPrivateKey()
 // Get the base point order length
 unsigned long OSSLECPrivateKey::getOrderLength() const
 {
-	const EC_GROUP* grp = EC_KEY_get0_group(eckey);
-	if (grp != NULL)
+	EC_GROUP* grp = OSSL::byteString2grp(ec);
+	if (grp == NULL) return 0;
+
+	unsigned long len = 0;
+	BIGNUM* order = BN_new();
+	if (order != NULL && EC_GROUP_get_order(grp, order, NULL))
 	{
-		BIGNUM* order = BN_new();
-		if (order == NULL)
-			return 0;
-		if (!EC_GROUP_get_order(grp, order, NULL))
-		{
-			BN_clear_free(order);
-			return 0;
-		}
-		unsigned long len = BN_num_bytes(order);
-		BN_clear_free(order);
-		return len;
+		len = BN_num_bytes(order);
 	}
-	return 0;
+
+	BN_clear_free(order);
+	EC_GROUP_free(grp);
+
+	return len;
 }
 
 // Set from OpenSSL representation
-void OSSLECPrivateKey::setFromOSSL(const EC_KEY* inECKEY)
+void OSSLECPrivateKey::setFromOSSL(const EVP_PKEY* inPKEY)
 {
-	const EC_GROUP* grp = EC_KEY_get0_group(inECKEY);
-	if (grp != NULL)
+	// For EC keys this yields the ECPKParameters encoding, named or explicit
+	unsigned char* der = NULL;
+	int derLen = i2d_KeyParams(inPKEY, &der);
+	if (derLen > 0)
 	{
-		ByteString inEC = OSSL::grp2ByteString(grp);
+		ByteString inEC(der, derLen);
+		OPENSSL_free(der);
 		setEC(inEC);
 	}
-	const BIGNUM* pk = EC_KEY_get0_private_key(inECKEY);
-	if (pk != NULL)
+
+	BIGNUM* bn_d = NULL;
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_PRIV_KEY, &bn_d))
 	{
-		ByteString inD = OSSL::bn2ByteString(pk);
+		ByteString inD = OSSL::bn2ByteString(bn_d);
 		setD(inD);
+		BN_clear_free(bn_d);
 	}
 }
 
@@ -115,9 +114,8 @@ void OSSLECPrivateKey::setD(const ByteString& inD)
 {
 	ECPrivateKey::setD(inD);
 
-	BIGNUM* pk = OSSL::byteString2bn(inD);
-	EC_KEY_set_private_key(eckey, pk);
-	BN_clear_free(pk);
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 
@@ -126,25 +124,17 @@ void OSSLECPrivateKey::setEC(const ByteString& inEC)
 {
 	ECPrivateKey::setEC(inEC);
 
-	EC_GROUP* grp = OSSL::byteString2grp(inEC);
-	EC_KEY_set_group(eckey, grp);
-	EC_GROUP_free(grp);
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 // Encode into PKCS#8 DER
 ByteString OSSLECPrivateKey::PKCS8Encode()
 {
 	ByteString der;
-	if (eckey == NULL) return der;
-	EVP_PKEY* pkey = EVP_PKEY_new();
+	createOSSLKey();
 	if (pkey == NULL) return der;
-	if (!EVP_PKEY_set1_EC_KEY(pkey, eckey))
-	{
-		EVP_PKEY_free(pkey);
-		return der;
-	}
 	PKCS8_PRIV_KEY_INFO* p8inf = EVP_PKEY2PKCS8(pkey);
-	EVP_PKEY_free(pkey);
 	if (p8inf == NULL) return der;
 	int len = i2d_PKCS8_PRIV_KEY_INFO(p8inf, NULL);
 	if (len < 0)
@@ -168,20 +158,27 @@ bool OSSLECPrivateKey::PKCS8Decode(const ByteString& ber)
 	const unsigned char* priv = ber.const_byte_str();
 	PKCS8_PRIV_KEY_INFO* p8 = d2i_PKCS8_PRIV_KEY_INFO(NULL, &priv, len);
 	if (p8 == NULL) return false;
-	EVP_PKEY* pkey = EVP_PKCS82PKEY(p8);
+	EVP_PKEY* key = EVP_PKCS82PKEY(p8);
 	PKCS8_PRIV_KEY_INFO_free(p8);
-	if (pkey == NULL) return false;
-	EC_KEY* key = EVP_PKEY_get1_EC_KEY(pkey);
-	EVP_PKEY_free(pkey);
 	if (key == NULL) return false;
 	setFromOSSL(key);
-	EC_KEY_free(key);
+	EVP_PKEY_free(key);
 	return true;
 }
 
 // Retrieve the OpenSSL representation of the key
-EC_KEY* OSSLECPrivateKey::getOSSLKey()
+EVP_PKEY* OSSLECPrivateKey::getOSSLKey()
 {
-	return eckey;
+	if (pkey == NULL) createOSSLKey();
+
+	return pkey;
+}
+
+// Create the OpenSSL representation of the key
+void OSSLECPrivateKey::createOSSLKey()
+{
+	if (pkey != NULL) return;
+
+	pkey = OSSL::ec2PKey(ec, NULL, &d);
 }
 #endif

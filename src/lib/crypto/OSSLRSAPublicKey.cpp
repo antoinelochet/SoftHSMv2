@@ -32,16 +32,11 @@
 
 #include "config.h"
 #include "log.h"
-#include "OSSLComp.h"
 #include "OSSLRSAPublicKey.h"
 #include "OSSLUtil.h"
 #include <string.h>
 #include <openssl/bn.h>
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/param_build.h>
-#else
-#include <openssl/rsa.h>
-#endif
 #ifdef WITH_FIPS
 #include <openssl/fips.h>
 #endif
@@ -82,7 +77,6 @@ void OSSLRSAPublicKey::setFromOSSL(const EVP_PKEY* inRSA)
 		ERROR_MSG("Null RSA key");
 		return;
 	}  
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
     BIGNUM* bn_n = NULL;
 	BIGNUM* bn_e = NULL;
 	EVP_PKEY_get_bn_param(inRSA, "n", &bn_n);
@@ -97,22 +91,6 @@ void OSSLRSAPublicKey::setFromOSSL(const EVP_PKEY* inRSA)
 		setE(OSSL::bn2ByteString(bn_e));
 		BN_free(bn_e);
 	}
-#else
-    const BIGNUM* bn_n = NULL;
-	const BIGNUM* bn_e = NULL;
-    const RSA* inRSA1 = EVP_PKEY_get0_RSA(const_cast<EVP_PKEY*>(inRSA));
-	if (inRSA1 != NULL)
-		RSA_get0_key(inRSA1, &bn_n, &bn_e, NULL);
-    if (bn_n)
-	{
-		setN(OSSL::bn2ByteString(bn_n));
-	}
-	if (bn_e)
-	{
-		setE(OSSL::bn2ByteString(bn_e));
-	}
-#endif
-	
 }
 
 // Setters for the RSA public key components
@@ -157,7 +135,6 @@ void OSSLRSAPublicKey::createOSSLKey()
 	BIGNUM* bn_n = OSSL::byteString2bn(n);
 	BIGNUM* bn_e = OSSL::byteString2bn(e);
 
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	OSSL_PARAM_BLD *param_bld = OSSL_PARAM_BLD_new();
 
 	if ((param_bld == NULL) ||
@@ -195,45 +172,4 @@ void OSSLRSAPublicKey::createOSSLKey()
 	}
     OSSL_PARAM_free(params);
 	EVP_PKEY_CTX_free(ctx);
-	
-#else
-    RSA* rsa1 = RSA_new();
-	if (rsa1 == NULL)
-    {
-		BN_free(bn_n);
-	    BN_free(bn_e);
-		ERROR_MSG("Could not build RSA object");
-		return;
-    }
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-// Use the OpenSSL implementation and not any engine
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-		RSA_set_method(rsa1, FIPS_rsa_pkcs1_ssleay());
-	else
-		RSA_set_method(rsa1, RSA_PKCS1_SSLeay());
-#else
-	RSA_set_method(rsa1, RSA_PKCS1_SSLeay());
-#endif
-
-#else
-	RSA_set_method(rsa1, RSA_PKCS1_OpenSSL());
-#endif
-	RSA_set0_key(rsa1, bn_n, bn_e, NULL);
-	rsa = EVP_PKEY_new();
-	if (rsa == NULL)
-	{
-		ERROR_MSG("Could not build RSA PKEY");
-		RSA_free(rsa1);
-		return;
-    }
-	if (EVP_PKEY_assign_RSA(rsa,rsa1) <= 0)
-	{
-		ERROR_MSG("Could not assign RSA PKEY");
-		RSA_free(rsa1);
-		EVP_PKEY_free(rsa);
-		rsa = NULL;
-		return;
-	}
-#endif
 }

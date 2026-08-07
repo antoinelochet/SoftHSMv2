@@ -35,11 +35,7 @@
 
 #include "config.h"
 #include "DHPrivateKey.h"
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-#include <openssl/dh.h>
-#else
 #include <openssl/evp.h>
-#endif
 
 
 class OSSLDHPrivateKey : public DHPrivateKey
@@ -48,11 +44,7 @@ public:
 	// Constructors
 	OSSLDHPrivateKey();
 
-	#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	OSSLDHPrivateKey(const DH* inDH);
-#else
 	OSSLDHPrivateKey(const EVP_PKEY* inDH);
-#endif
 
 	// Destructor
 	virtual ~OSSLDHPrivateKey();
@@ -76,27 +68,15 @@ public:
 	// Decode from PKCS#8 BER
 	virtual bool PKCS8Decode(const ByteString& ber);
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// Retrieve the OpenSSL representation of the key
-	DH* getOSSLKey();
-
-	// Set from OpenSSL representation
-	virtual void setFromOSSL(const DH* inDH);
-#else
 	// Retrieve the OpenSSL representation of the key
 	EVP_PKEY* getOSSLKey();
 
 	// Set from OpenSSL representation
 	virtual void setFromOSSL(const EVP_PKEY* inDH);
-#endif
 
 private:
 	// The internal OpenSSL representation
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	DH* dh;
-#else
 	EVP_PKEY* dh;
-#endif
 
 	/* Reset OpenSSL representation of the key */
 	void resetOSSLKey();

@@ -51,7 +51,6 @@ set(SOURCES AESKey.cpp
 if(WITH_OPENSSL)
     list(APPEND SOURCES OSSLAES.cpp
                         OSSLCMAC.cpp
-                        OSSLComp.cpp
                         OSSLCryptoFactory.cpp
                         OSSLDES.cpp
                         OSSLDH.cpp

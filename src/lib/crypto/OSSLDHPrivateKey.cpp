@@ -32,20 +32,13 @@
 
 #include "config.h"
 #include "log.h"
-#include "OSSLComp.h"
 #include "OSSLDHPrivateKey.h"
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
 #include <openssl/x509.h>
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-#ifdef WITH_FIPS
-#include <openssl/fips.h>
-#endif
-#else
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
 #include <openssl/provider.h>
-#endif
 #include <string.h>
 
 // Constructors
@@ -54,13 +47,7 @@ OSSLDHPrivateKey::OSSLDHPrivateKey()
 	dh = NULL;
 }
 
-OSSLDHPrivateKey::OSSLDHPrivateKey(
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	const DH* inDH
-#else
-	const EVP_PKEY *inDH
-#endif
-)
+OSSLDHPrivateKey::OSSLDHPrivateKey(const EVP_PKEY *inDH)
 {
 	dh = NULL;
 
@@ -106,149 +93,6 @@ void OSSLDHPrivateKey::setG(const ByteString& inG)
 
 	resetOSSLKey();
 }
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-// Encode into PKCS#8 DER
-ByteString OSSLDHPrivateKey::PKCS8Encode()
-{
-	ByteString der;
-	if (dh == NULL) createOSSLKey();
-	if (dh == NULL) return der;
-	EVP_PKEY* pkey = EVP_PKEY_new();
-	if (pkey == NULL) return der;
-	if (!EVP_PKEY_set1_DH(pkey, dh))
-	{
-		EVP_PKEY_free(pkey);
-		return der;
-	}
-	PKCS8_PRIV_KEY_INFO* p8inf = EVP_PKEY2PKCS8(pkey);
-	EVP_PKEY_free(pkey);
-	if (p8inf == NULL) return der;
-	int len = i2d_PKCS8_PRIV_KEY_INFO(p8inf, NULL);
-	if (len < 0)
-	{
-		PKCS8_PRIV_KEY_INFO_free(p8inf);
-		return der;
-	}
-	der.resize(len);
-	unsigned char* priv = &der[0];
-	int len2 = i2d_PKCS8_PRIV_KEY_INFO(p8inf, &priv);
-	PKCS8_PRIV_KEY_INFO_free(p8inf);
-	if (len2 != len) der.wipe();
-	return der;
-}
-
-// Decode from PKCS#8 BER
-bool OSSLDHPrivateKey::PKCS8Decode(const ByteString& ber)
-{
-	int len = ber.size();
-	if (len <= 0) return false;
-	const unsigned char* priv = ber.const_byte_str();
-	PKCS8_PRIV_KEY_INFO* p8 = d2i_PKCS8_PRIV_KEY_INFO(NULL, &priv, len);
-	if (p8 == NULL) return false;
-	EVP_PKEY* pkey = EVP_PKCS82PKEY(p8);
-	PKCS8_PRIV_KEY_INFO_free(p8);
-	if (pkey == NULL) return false;
-	DH* key = EVP_PKEY_get1_DH(pkey);
-	EVP_PKEY_free(pkey);
-	if (key == NULL) return false;
-	setFromOSSL(key);
-	DH_free(key);
-	return true;
-}
-
-// Retrieve the OpenSSL representation of the key
-DH* OSSLDHPrivateKey::getOSSLKey()
-{
-	if (dh == NULL) createOSSLKey();
-
-	return dh;
-}
-
-// Set from OpenSSL representation
-void OSSLDHPrivateKey::setFromOSSL(const DH* inDH)
-{
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_g = NULL;
-	const BIGNUM* bn_priv_key = NULL;
-
-	DH_get0_pqg(inDH, &bn_p, NULL, &bn_g);
-	DH_get0_key(inDH, NULL, &bn_priv_key);
-
-	if (bn_p)
-	{
-		ByteString inP = OSSL::bn2ByteString(bn_p);
-		setP(inP);
-	}
-	if (bn_g)
-	{
-		ByteString inG = OSSL::bn2ByteString(bn_g);
-		setG(inG);
-	}
-	if (bn_priv_key)
-	{
-		ByteString inX = OSSL::bn2ByteString(bn_priv_key);
-		setX(inX);
-	}
-}
-
-void OSSLDHPrivateKey::resetOSSLKey()
-{
-	if (dh)
-	{
-		DH_free(dh);
-		dh = NULL;
-	}
-}
-
-// Create the OpenSSL representation of the key
-void OSSLDHPrivateKey::createOSSLKey()
-{
-	if (dh != NULL) return;
-
-	BN_CTX *ctx = BN_CTX_new();
-	if (ctx == NULL)
-	{
-		ERROR_MSG("Could not create BN_CTX");
-		return;
-	}
-
-	dh = DH_new();
-	if (dh == NULL)
-	{
-		ERROR_MSG("Could not create DH object");
-		return;
-	}
-
-	// Use the OpenSSL implementation and not any engine
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-		DH_set_method(dh, FIPS_dh_openssl());
-	else
-		DH_set_method(dh, DH_OpenSSL());
-#else
-	DH_set_method(dh, DH_OpenSSL());
-#endif
-
-#else
-	DH_set_method(dh, DH_OpenSSL());
-#endif
-
-	BIGNUM* bn_p = OSSL::byteString2bn(p);
-	BIGNUM* bn_g = OSSL::byteString2bn(g);
-	BIGNUM* bn_priv_key = OSSL::byteString2bn(x);
-	BIGNUM* bn_pub_key = BN_new();
-
-	BN_mod_exp(bn_pub_key, bn_g, bn_priv_key, bn_p, ctx);
-	BN_CTX_free(ctx);
-
-	DH_set0_pqg(dh, bn_p, NULL, bn_g);
-	DH_set0_key(dh, bn_pub_key, bn_priv_key);
-}
-
-#else
 
 // Encode into PKCS#8 DER
 ByteString OSSLDHPrivateKey::PKCS8Encode()
@@ -438,5 +282,3 @@ void OSSLDHPrivateKey::createOSSLKey()
 	BN_clear_free(bn_priv_key);
 	BN_free(bn_pub_key);
 }
-
-#endif

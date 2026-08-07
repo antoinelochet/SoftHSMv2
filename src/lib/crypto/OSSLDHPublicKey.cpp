@@ -32,19 +32,12 @@
 
 #include "config.h"
 #include "log.h"
-#include "OSSLComp.h"
 #include "OSSLDHPublicKey.h"
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-#ifdef WITH_FIPS
-#include <openssl/fips.h>
-#endif
-#else
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
 #include <openssl/provider.h>
-#endif
 #include <string.h>
 
 // The type
@@ -62,13 +55,7 @@ bool OSSLDHPublicKey::isOfType(const char* inType)
 	return !strcmp(type, inType);
 }
 
-OSSLDHPublicKey::OSSLDHPublicKey(
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	const DH* inDH
-#else
-	const EVP_PKEY *inDH
-#endif
-)
+OSSLDHPublicKey::OSSLDHPublicKey(const EVP_PKEY *inDH)
 {
 	dh = NULL;
 
@@ -103,88 +90,6 @@ void OSSLDHPublicKey::setY(const ByteString& inY)
 
 	resetOSSLKey();
 }
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-// Retrieve the OpenSSL representation of the key
-DH* OSSLDHPublicKey::getOSSLKey()
-{
-	if (dh == NULL) createOSSLKey();
-
-	return dh;
-}
-
-// Set from OpenSSL representation
-void OSSLDHPublicKey::setFromOSSL(const DH* inDH)
-{
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_g = NULL;
-	const BIGNUM* bn_pub_key = NULL;
-
-	DH_get0_pqg(inDH, &bn_p, NULL, &bn_g);
-	DH_get0_key(inDH, &bn_pub_key, NULL);
-
-	if (bn_p)
-	{
-		ByteString inP = OSSL::bn2ByteString(bn_p);
-		setP(inP);
-	}
-	if (bn_g)
-	{
-		ByteString inG = OSSL::bn2ByteString(bn_g);
-		setG(inG);
-	}
-	if (bn_pub_key)
-	{
-		ByteString inY = OSSL::bn2ByteString(bn_pub_key);
-		setY(inY);
-	}
-}
-
-void OSSLDHPublicKey::resetOSSLKey()
-{
-	if (dh)
-	{
-		DH_free(dh);
-		dh = NULL;
-	}
-}
-
-// Create the OpenSSL representation of the key
-void OSSLDHPublicKey::createOSSLKey()
-{
-	if (dh != NULL) return;
-
-	dh = DH_new();
-	if (dh == NULL)
-	{
-		ERROR_MSG("Could not create DH object");
-		return;
-	}
-
-	// Use the OpenSSL implementation and not any engine
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-		DH_set_method(dh, FIPS_dh_openssl());
-	else
-		DH_set_method(dh, DH_OpenSSL());
-#else
-	DH_set_method(dh, DH_OpenSSL());
-#endif
-
-#else
-	DH_set_method(dh, DH_OpenSSL());
-#endif
-
-	BIGNUM* bn_p = OSSL::byteString2bn(p);
-	BIGNUM* bn_g = OSSL::byteString2bn(g);
-	BIGNUM* bn_pub_key = OSSL::byteString2bn(y);
-
-	DH_set0_pqg(dh, bn_p, NULL, bn_g);
-	DH_set0_key(dh, bn_pub_key, NULL);
-}
-#else
 
 // Retrieve the OpenSSL representation of the key
 EVP_PKEY* OSSLDHPublicKey::getOSSLKey()
@@ -298,5 +203,3 @@ void OSSLDHPublicKey::createOSSLKey()
 	BN_free(bn_g);
 	BN_free(bn_pub_key);
 }
-
-#endif

@@ -32,68 +32,67 @@
 
 #include "config.h"
 #include "log.h"
-#include "OSSLComp.h"
 #include "OSSLDSAPrivateKey.h"
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
 #include <openssl/x509.h>
-#ifdef WITH_FIPS
-#include <openssl/fips.h>
-#endif
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
 #include <string.h>
 
 // Constructors
 OSSLDSAPrivateKey::OSSLDSAPrivateKey()
 {
-	dsa = NULL;
+	pkey = NULL;
 }
 
-OSSLDSAPrivateKey::OSSLDSAPrivateKey(const DSA* inDSA)
+OSSLDSAPrivateKey::OSSLDSAPrivateKey(const EVP_PKEY* inPKEY)
 {
-	dsa = NULL;
+	pkey = NULL;
 
-	setFromOSSL(inDSA);
+	setFromOSSL(inPKEY);
 }
 
 // Destructor
 OSSLDSAPrivateKey::~OSSLDSAPrivateKey()
 {
-	DSA_free(dsa);
+	EVP_PKEY_free(pkey);
 }
 
 // The type
 /*static*/ const char* OSSLDSAPrivateKey::type = "OpenSSL DSA Private Key";
 
 // Set from OpenSSL representation
-void OSSLDSAPrivateKey::setFromOSSL(const DSA* inDSA)
+void OSSLDSAPrivateKey::setFromOSSL(const EVP_PKEY* inPKEY)
 {
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_q = NULL;
-	const BIGNUM* bn_g = NULL;
-	const BIGNUM* bn_priv_key = NULL;
+	BIGNUM* bn_p = NULL;
+	BIGNUM* bn_q = NULL;
+	BIGNUM* bn_g = NULL;
+	BIGNUM* bn_priv_key = NULL;
 
-	DSA_get0_pqg(inDSA, &bn_p, &bn_q, &bn_g);
-	DSA_get0_key(inDSA, NULL, &bn_priv_key);
-
-	if (bn_p)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_FFC_P, &bn_p))
 	{
 		ByteString inP = OSSL::bn2ByteString(bn_p);
 		setP(inP);
+		BN_free(bn_p);
 	}
-	if (bn_q)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_FFC_Q, &bn_q))
 	{
 		ByteString inQ = OSSL::bn2ByteString(bn_q);
 		setQ(inQ);
+		BN_free(bn_q);
 	}
-	if (bn_g)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_FFC_G, &bn_g))
 	{
 		ByteString inG = OSSL::bn2ByteString(bn_g);
 		setG(inG);
+		BN_free(bn_g);
 	}
-	if (bn_priv_key)
+	if (EVP_PKEY_get_bn_param(inPKEY, OSSL_PKEY_PARAM_PRIV_KEY, &bn_priv_key))
 	{
 		ByteString inX = OSSL::bn2ByteString(bn_priv_key);
 		setX(inX);
+		BN_clear_free(bn_priv_key);
 	}
 }
 
@@ -108,11 +107,8 @@ void OSSLDSAPrivateKey::setX(const ByteString& inX)
 {
 	DSAPrivateKey::setX(inX);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 
@@ -121,50 +117,33 @@ void OSSLDSAPrivateKey::setP(const ByteString& inP)
 {
 	DSAPrivateKey::setP(inP);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 void OSSLDSAPrivateKey::setQ(const ByteString& inQ)
 {
 	DSAPrivateKey::setQ(inQ);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 void OSSLDSAPrivateKey::setG(const ByteString& inG)
 {
 	DSAPrivateKey::setG(inG);
 
-	if (dsa)
-	{
-		DSA_free(dsa);
-		dsa = NULL;
-	}
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 // Encode into PKCS#8 DER
 ByteString OSSLDSAPrivateKey::PKCS8Encode()
 {
 	ByteString der;
-	if (dsa == NULL) createOSSLKey();
-	if (dsa == NULL) return der;
-	EVP_PKEY* pkey = EVP_PKEY_new();
+	createOSSLKey();
 	if (pkey == NULL) return der;
-	if (!EVP_PKEY_set1_DSA(pkey, dsa))
-	{
-		EVP_PKEY_free(pkey);
-		return der;
-	}
 	PKCS8_PRIV_KEY_INFO* p8inf = EVP_PKEY2PKCS8(pkey);
-	EVP_PKEY_free(pkey);
 	if (p8inf == NULL) return der;
 	int len = i2d_PKCS8_PRIV_KEY_INFO(p8inf, NULL);
 	if (len < 0)
@@ -188,69 +167,65 @@ bool OSSLDSAPrivateKey::PKCS8Decode(const ByteString& ber)
 	const unsigned char* priv = ber.const_byte_str();
 	PKCS8_PRIV_KEY_INFO* p8 = d2i_PKCS8_PRIV_KEY_INFO(NULL, &priv, len);
 	if (p8 == NULL) return false;
-	EVP_PKEY* pkey = EVP_PKCS82PKEY(p8);
+	EVP_PKEY* key = EVP_PKCS82PKEY(p8);
 	PKCS8_PRIV_KEY_INFO_free(p8);
-	if (pkey == NULL) return false;
-	DSA* key = EVP_PKEY_get1_DSA(pkey);
-	EVP_PKEY_free(pkey);
 	if (key == NULL) return false;
 	setFromOSSL(key);
-	DSA_free(key);
+	EVP_PKEY_free(key);
 	return true;
 }
 
 // Retrieve the OpenSSL representation of the key
-DSA* OSSLDSAPrivateKey::getOSSLKey()
+EVP_PKEY* OSSLDSAPrivateKey::getOSSLKey()
 {
-	if (dsa == NULL) createOSSLKey();
+	if (pkey == NULL) createOSSLKey();
 
-	return dsa;
+	return pkey;
 }
 
 // Create the OpenSSL representation of the key
 void OSSLDSAPrivateKey::createOSSLKey()
 {
-	if (dsa != NULL) return;
-
-	BN_CTX *ctx = BN_CTX_new();
-	if (ctx == NULL)
-	{
-		ERROR_MSG("Could not create BN_CTX");
-		return;
-	}
-
-	dsa = DSA_new();
-	if (dsa == NULL)
-	{
-		ERROR_MSG("Could not create DSA object");
-		return;
-	}
-
-	// Use the OpenSSL implementation and not any engine
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-		DSA_set_method(dsa, FIPS_dsa_openssl());
-	else
-		DSA_set_method(dsa, DSA_OpenSSL());
-#else
-	DSA_set_method(dsa, DSA_OpenSSL());
-#endif
-
-#else
-	DSA_set_method(dsa, DSA_OpenSSL());
-#endif
+	if (pkey != NULL) return;
 
 	BIGNUM* bn_p = OSSL::byteString2bn(p);
 	BIGNUM* bn_q = OSSL::byteString2bn(q);
 	BIGNUM* bn_g = OSSL::byteString2bn(g);
 	BIGNUM* bn_priv_key = OSSL::byteString2bn(x);
 	BIGNUM* bn_pub_key = BN_new();
+	BN_CTX* ctx = BN_CTX_new();
 
-	BN_mod_exp(bn_pub_key, bn_g, bn_priv_key, bn_p, ctx);
+	OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+	OSSL_PARAM* params = NULL;
+	EVP_PKEY_CTX* pctx = NULL;
+
+	// OpenSSL requires the public key alongside the private one
+	if (ctx == NULL || bn_pub_key == NULL ||
+	    !BN_mod_exp(bn_pub_key, bn_g, bn_priv_key, bn_p, ctx) ||
+	    bld == NULL ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_P, bn_p) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_Q, bn_q) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_FFC_G, bn_g) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PUB_KEY, bn_pub_key) ||
+	    !OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PRIV_KEY, bn_priv_key) ||
+	    (params = OSSL_PARAM_BLD_to_param(bld)) == NULL ||
+	    (pctx = EVP_PKEY_CTX_new_from_name(NULL, "DSA", NULL)) == NULL ||
+	    EVP_PKEY_fromdata_init(pctx) <= 0 ||
+	    EVP_PKEY_fromdata(pctx, &pkey, EVP_PKEY_KEYPAIR, params) <= 0)
+	{
+		ERROR_MSG("Could not create the DSA private key");
+
+		EVP_PKEY_free(pkey);
+		pkey = NULL;
+	}
+
+	EVP_PKEY_CTX_free(pctx);
+	OSSL_PARAM_free(params);
+	OSSL_PARAM_BLD_free(bld);
 	BN_CTX_free(ctx);
-
-	DSA_set0_pqg(dsa, bn_p, bn_q, bn_g);
-	DSA_set0_key(dsa, bn_pub_key, bn_priv_key);
+	BN_free(bn_p);
+	BN_free(bn_q);
+	BN_free(bn_g);
+	BN_free(bn_pub_key);
+	BN_clear_free(bn_priv_key);
 }
