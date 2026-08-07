@@ -40,6 +40,7 @@ class ECDHTests : public CppUnit::TestFixture
 {
 	CPPUNIT_TEST_SUITE(ECDHTests);
 	CPPUNIT_TEST(testKeyGeneration);
+	CPPUNIT_TEST(testExplicitParameters);
 	CPPUNIT_TEST(testSerialisation);
 	CPPUNIT_TEST(testPKCS8);
 	CPPUNIT_TEST(testDerivation);
@@ -48,6 +49,7 @@ class ECDHTests : public CppUnit::TestFixture
 
 public:
 	void testKeyGeneration();
+	void testExplicitParameters();
 	void testSerialisation();
 	void testPKCS8();
 	void testDerivation();

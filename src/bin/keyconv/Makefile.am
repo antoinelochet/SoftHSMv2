@@ -13,8 +13,7 @@ softhsm2_keyconv_LDADD =	@CRYPTO_LIBS@
 
 # Compile with OpenSSL support
 if WITH_OPENSSL
-softhsm2_keyconv_SOURCES +=	softhsm2-keyconv-ossl.cpp \
-				../../lib/crypto/OSSLComp.cpp
+softhsm2_keyconv_SOURCES +=	softhsm2-keyconv-ossl.cpp
 endif
 
 # Compile with Botan support

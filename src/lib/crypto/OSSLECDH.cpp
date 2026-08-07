@@ -131,39 +131,44 @@ bool OSSLECDH::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParamete
 
 	ECParameters* params = (ECParameters*) parameters;
 
-	// Generate the key-pair
-	EC_KEY* eckey = EC_KEY_new();
-
-	if (eckey == NULL)
+	// Generate the key-pair from the supplied domain parameters
+	EVP_PKEY* domain = OSSL::ec2PKey(params->getEC(), NULL, NULL);
+	if (domain == NULL)
 	{
-		ERROR_MSG("Failed to instantiate OpenSSL ECDH object");
+		ERROR_MSG("Failed to instantiate the EC domain parameters");
 
 		return false;
 	}
 
-	EC_GROUP* grp = OSSL::byteString2grp(params->getEC());
-	EC_KEY_set_group(eckey, grp);
-	EC_GROUP_free(grp);
+	EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_pkey(NULL, domain, NULL);
+	EVP_PKEY* pkey = NULL;
 
-	if (!EC_KEY_generate_key(eckey))
+	if (ctx == NULL ||
+	    EVP_PKEY_keygen_init(ctx) <= 0 ||
+	    EVP_PKEY_keygen(ctx, &pkey) <= 0)
 	{
 		ERROR_MSG("ECDH key generation failed (0x%08X)", ERR_get_error());
 
-		EC_KEY_free(eckey);
+		EVP_PKEY_free(pkey);
+		EVP_PKEY_CTX_free(ctx);
+		EVP_PKEY_free(domain);
 
 		return false;
 	}
+
+	EVP_PKEY_CTX_free(ctx);
+	EVP_PKEY_free(domain);
 
 	// Create an asymmetric key-pair object to return
 	OSSLECKeyPair* kp = new OSSLECKeyPair();
 
-	((OSSLECPublicKey*) kp->getPublicKey())->setFromOSSL(eckey);
-	((OSSLECPrivateKey*) kp->getPrivateKey())->setFromOSSL(eckey);
+	((OSSLECPublicKey*) kp->getPublicKey())->setFromOSSL(pkey);
+	((OSSLECPrivateKey*) kp->getPrivateKey())->setFromOSSL(pkey);
 
 	*ppKeyPair = kp;
 
 	// Release the key
-	EC_KEY_free(eckey);
+	EVP_PKEY_free(pkey);
 
 	return true;
 }
@@ -179,52 +184,38 @@ bool OSSLECDH::deriveKey(SymmetricKey **ppSymmetricKey, PublicKey* publicKey, Pr
 	}
 
 	// Get keys
-	EC_KEY *pub = ((OSSLECPublicKey *)publicKey)->getOSSLKey();
-	EC_KEY *priv = ((OSSLECPrivateKey *)privateKey)->getOSSLKey();
-	if (pub == NULL || EC_KEY_get0_public_key(pub) == NULL || priv == NULL)
+	EVP_PKEY* pub = ((OSSLECPublicKey *)publicKey)->getOSSLKey();
+	EVP_PKEY* priv = ((OSSLECPrivateKey *)privateKey)->getOSSLKey();
+	if (pub == NULL || priv == NULL)
 	{
 		ERROR_MSG("Failed to get OpenSSL ECDH keys");
 
 		return false;
 	}
 
-	// Use the OpenSSL implementation and not any engine
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-
-#ifdef WITH_FIPS
-	if (FIPS_mode())
-	{
-		ECDH_set_method(pub, FIPS_ecdh_openssl());
-		ECDH_set_method(priv, FIPS_ecdh_openssl());
-	}
-	else
-	{
-		ECDH_set_method(pub, ECDH_OpenSSL());
-		ECDH_set_method(priv, ECDH_OpenSSL());
-	}
-#else
-	ECDH_set_method(pub, ECDH_OpenSSL());
-	ECDH_set_method(priv, ECDH_OpenSSL());
-#endif
-
-#else
-	EC_KEY_set_method(pub, EC_KEY_OpenSSL());
-	EC_KEY_set_method(priv, EC_KEY_OpenSSL());
-#endif
-
 	// Derive the secret
 	ByteString secret, derivedSecret;
 	int size = ((OSSLECPublicKey *)publicKey)->getOrderLength();
 	secret.wipe(size);
 	derivedSecret.wipe(size);
-	int keySize = ECDH_compute_key(&derivedSecret[0], derivedSecret.size(), EC_KEY_get0_public_key(pub), priv, NULL);
 
-	if (keySize <= 0)
+	EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_pkey(NULL, priv, NULL);
+	size_t keySize = derivedSecret.size();
+
+	if (ctx == NULL ||
+	    EVP_PKEY_derive_init(ctx) <= 0 ||
+	    EVP_PKEY_derive_set_peer(ctx, pub) <= 0 ||
+	    EVP_PKEY_derive(ctx, &derivedSecret[0], &keySize) <= 0 ||
+	    keySize == 0)
 	{
 		ERROR_MSG("ECDH key derivation failed (0x%08X)", ERR_get_error());
 
+		EVP_PKEY_CTX_free(ctx);
+
 		return false;
 	}
+
+	EVP_PKEY_CTX_free(ctx);
 
 	// We compensate that OpenSSL removes leading zeros
 	memcpy(&secret[0] + size - keySize, &derivedSecret[0], keySize);

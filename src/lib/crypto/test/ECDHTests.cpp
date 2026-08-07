@@ -180,6 +180,49 @@ void ECDHTests::testPKCS8()
 	ecdh->recyclePrivateKey(dPriv);
 }
 
+// Explicit domain parameters must survive key generation and still derive a
+// shared secret, since nothing validates CKA_EC_PARAMS as a named curve
+void ECDHTests::testExplicitParameters()
+{
+	AsymmetricKeyPair* kpa;
+	AsymmetricKeyPair* kpb;
+
+	// Curves in explicit form, as emitted by "openssl ecparam -param_enc explicit"
+	std::vector<ByteString> curves;
+	// prime256v1, carries a seed
+	curves.push_back(ByteString("3081f7020101302c06072a8648ce3d0101022100ffffffff00000001000000000000000000000000ffffffffffffffffffffffff305b0420ffffffff00000001000000000000000000000000fffffffffffffffffffffffc04205ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b031500c49d360886e704936a6678e1139d26b7819f7e900441046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551020101"));
+	// secp256k1, no seed
+	curves.push_back(ByteString("3081e0020101302c06072a8648ce3d0101022100fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f3044042000000000000000000000000000000000000000000000000000000000000000000420000000000000000000000000000000000000000000000000000000000000000704410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141020101"));
+
+	for (std::vector<ByteString>::iterator c = curves.begin(); c != curves.end(); c++)
+	{
+		ECParameters* p = new ECParameters;
+		CPPUNIT_ASSERT(p != NULL);
+		p->setEC(*c);
+
+		CPPUNIT_ASSERT(ecdh->generateKeyPair(&kpa, p));
+		CPPUNIT_ASSERT(ecdh->generateKeyPair(&kpb, p));
+
+		// The encoding must come back byte for byte, not collapsed to a named curve
+		CPPUNIT_ASSERT(((ECPublicKey*) kpa->getPublicKey())->getEC() == *c);
+		CPPUNIT_ASSERT(((ECPrivateKey*) kpa->getPrivateKey())->getEC() == *c);
+
+		SymmetricKey* sa;
+		CPPUNIT_ASSERT(ecdh->deriveKey(&sa, kpb->getPublicKey(), kpa->getPrivateKey()));
+		SymmetricKey* sb;
+		CPPUNIT_ASSERT(ecdh->deriveKey(&sb, kpa->getPublicKey(), kpb->getPrivateKey()));
+
+		CPPUNIT_ASSERT(sa->getKeyBits() == sb->getKeyBits());
+		CPPUNIT_ASSERT(sa->getKeyBits().size() != 0);
+
+		ecdh->recycleSymmetricKey(sa);
+		ecdh->recycleSymmetricKey(sb);
+		ecdh->recycleKeyPair(kpa);
+		ecdh->recycleKeyPair(kpb);
+		ecdh->recycleParameters(p);
+	}
+}
+
 void ECDHTests::testDerivation()
 {
 	AsymmetricKeyPair* kpa;

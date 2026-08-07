@@ -39,7 +39,6 @@
 #include "OSSLGOSTKeyPair.h"
 #include "OSSLGOSTPrivateKey.h"
 #include "OSSLGOSTPublicKey.h"
-#include "OSSLComp.h"
 #include <algorithm>
 #include <openssl/ecdsa.h>
 #include <openssl/pem.h>

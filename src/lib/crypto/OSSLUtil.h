@@ -38,6 +38,7 @@
 #include <openssl/bn.h>
 #ifdef WITH_ECC
 #include <openssl/ec.h>
+#include <openssl/evp.h>
 #endif
 #ifdef WITH_EDDSA
 #include <openssl/objects.h>
@@ -63,6 +64,11 @@ namespace OSSL
 
 	// Convert a ByteString to an OpenSSL EC POINT in the given EC GROUP
 	EC_POINT* byteString2pt(const ByteString& byteString, const EC_GROUP* grp);
+
+	// Build an EVP_PKEY from DER-encoded EC domain parameters, plus an optional
+	// public point (DER octet string) and an optional private scalar. The public
+	// point is derived from the scalar when only the latter is given.
+	EVP_PKEY* ec2PKey(const ByteString& ec, const ByteString* q, const ByteString* d);
 #endif
 
 #ifdef WITH_EDDSA

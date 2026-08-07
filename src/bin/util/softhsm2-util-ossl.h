@@ -39,14 +39,10 @@
 
 #include <openssl/rsa.h>
 #include <openssl/dsa.h>
+#include <openssl/evp.h>
+#include <openssl/core_names.h>
 #ifdef WITH_ECC
 #include <openssl/ec.h>
-#endif
-#if defined(WITH_EDDSA) || defined(WITH_ML_DSA) || defined(WITH_ML_KEM)
-#include <openssl/evp.h>
-#endif
-#if defined(WITH_ML_DSA) || defined(WITH_ML_KEM)
-#include <openssl/core_names.h>
 #endif
 #ifdef WITH_ML_DSA
 #include "MLDSAParameters.h"
@@ -200,19 +196,19 @@ typedef struct mlkem_key_material_t {
 EVP_PKEY* crypto_read_file(char* filePath, char* filePIN);
 
 // RSA
-int crypto_save_rsa(CK_SESSION_HANDLE hSession, char* label, char* objID, size_t objIDLen, int noPublicKey, RSA* rsa);
-rsa_key_material_t* crypto_malloc_rsa(RSA* rsa);
+int crypto_save_rsa(CK_SESSION_HANDLE hSession, char* label, char* objID, size_t objIDLen, int noPublicKey, EVP_PKEY* rsa);
+rsa_key_material_t* crypto_malloc_rsa(EVP_PKEY* rsa);
 void crypto_free_rsa(rsa_key_material_t* keyMat);
 
 // DSA
-int crypto_save_dsa(CK_SESSION_HANDLE hSession, char* label, char* objID, size_t objIDLen, int noPublicKey, DSA* dsa);
-dsa_key_material_t* crypto_malloc_dsa(DSA* dsa);
+int crypto_save_dsa(CK_SESSION_HANDLE hSession, char* label, char* objID, size_t objIDLen, int noPublicKey, EVP_PKEY* dsa);
+dsa_key_material_t* crypto_malloc_dsa(EVP_PKEY* dsa);
 void crypto_free_dsa(dsa_key_material_t* keyMat);
 
 #ifdef WITH_ECC
 // ECDSA
-int crypto_save_ecdsa(CK_SESSION_HANDLE hSession, char* label, char* objID, size_t objIDLen, int noPublicKey, EC_KEY* ecdsa);
-ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ecdsa);
+int crypto_save_ecdsa(CK_SESSION_HANDLE hSession, char* label, char* objID, size_t objIDLen, int noPublicKey, EVP_PKEY* ecdsa);
+ecdsa_key_material_t* crypto_malloc_ecdsa(EVP_PKEY* ecdsa);
 void crypto_free_ecdsa(ecdsa_key_material_t* keyMat);
 #endif
 

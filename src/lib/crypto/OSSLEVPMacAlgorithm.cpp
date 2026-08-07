@@ -34,12 +34,55 @@
 
 #include "config.h"
 #include "OSSLEVPMacAlgorithm.h"
-#include "OSSLComp.h"
+#include <openssl/core_names.h>
+#include <openssl/params.h>
+
+namespace {
+
+// Create and initialise an HMAC context for the given digest and key
+EVP_MAC_CTX* newHMACCTX(const EVP_MD* md, const SymmetricKey* key)
+{
+	EVP_MAC* mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+	if (mac == NULL)
+	{
+		ERROR_MSG("Failed to fetch HMAC implementation");
+
+		return NULL;
+	}
+
+	EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
+	EVP_MAC_free(mac);
+	if (ctx == NULL)
+	{
+		ERROR_MSG("Failed to allocate space for EVP_MAC_CTX");
+
+		return NULL;
+	}
+
+	// EVP_MAC_init only reads the digest name, so casting away const is safe
+	OSSL_PARAM params[] = {
+		OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, const_cast<char*>(EVP_MD_get0_name(md)), 0),
+		OSSL_PARAM_construct_end()
+	};
+
+	if (!EVP_MAC_init(ctx, key->getKeyBits().const_byte_str(), key->getKeyBits().size(), params))
+	{
+		ERROR_MSG("EVP_MAC_init failed");
+
+		EVP_MAC_CTX_free(ctx);
+
+		return NULL;
+	}
+
+	return ctx;
+}
+
+}
 
 // Destructor
 OSSLEVPMacAlgorithm::~OSSLEVPMacAlgorithm()
 {
-	HMAC_CTX_free(curCTX);
+	EVP_MAC_CTX_free(curCTX);
 }
 
 // Signing functions
@@ -52,22 +95,9 @@ bool OSSLEVPMacAlgorithm::signInit(const SymmetricKey* key)
 	}
 
 	// Initialize the context
-	curCTX = HMAC_CTX_new();
+	curCTX = newHMACCTX(getEVPHash(), key);
 	if (curCTX == NULL)
 	{
-		ERROR_MSG("Failed to allocate space for HMAC_CTX");
-
-		return false;
-	}
-
-	// Initialize EVP signing
-	if (!HMAC_Init_ex(curCTX, key->getKeyBits().const_byte_str(), key->getKeyBits().size(), getEVPHash(), NULL))
-	{
-		ERROR_MSG("HMAC_Init failed");
-
-		HMAC_CTX_free(curCTX);
-		curCTX = NULL;
-
 		ByteString dummy;
 		MacAlgorithm::signFinal(dummy);
 
@@ -87,11 +117,11 @@ bool OSSLEVPMacAlgorithm::signUpdate(const ByteString& dataToSign)
 	// The GOST implementation in OpenSSL will segfault if we update with zero length.
 	if (dataToSign.size() == 0) return true;
 
-	if (!HMAC_Update(curCTX, dataToSign.const_byte_str(), dataToSign.size()))
+	if (!EVP_MAC_update(curCTX, dataToSign.const_byte_str(), dataToSign.size()))
 	{
-		ERROR_MSG("HMAC_Update failed");
+		ERROR_MSG("EVP_MAC_update failed");
 
-		HMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		ByteString dummy;
@@ -110,14 +140,14 @@ bool OSSLEVPMacAlgorithm::signFinal(ByteString& signature)
 		return false;
 	}
 
-	signature.resize(EVP_MD_size(getEVPHash()));
-	unsigned int outLen = signature.size();
+	signature.resize(EVP_MD_get_size(getEVPHash()));
+	size_t outLen = signature.size();
 
-	if (!HMAC_Final(curCTX, &signature[0], &outLen))
+	if (!EVP_MAC_final(curCTX, &signature[0], &outLen, signature.size()))
 	{
-		ERROR_MSG("HMAC_Final failed");
+		ERROR_MSG("EVP_MAC_final failed");
 
-		HMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		return false;
@@ -125,7 +155,7 @@ bool OSSLEVPMacAlgorithm::signFinal(ByteString& signature)
 
 	signature.resize(outLen);
 
-	HMAC_CTX_free(curCTX);
+	EVP_MAC_CTX_free(curCTX);
 	curCTX = NULL;
 
 	return true;
@@ -141,22 +171,9 @@ bool OSSLEVPMacAlgorithm::verifyInit(const SymmetricKey* key)
 	}
 
 	// Initialize the context
-	curCTX = HMAC_CTX_new();
+	curCTX = newHMACCTX(getEVPHash(), key);
 	if (curCTX == NULL)
 	{
-		ERROR_MSG("Failed to allocate space for HMAC_CTX");
-
-		return false;
-	}
-
-	// Initialize EVP signing
-	if (!HMAC_Init_ex(curCTX, key->getKeyBits().const_byte_str(), key->getKeyBits().size(), getEVPHash(), NULL))
-	{
-		ERROR_MSG("HMAC_Init failed");
-
-		HMAC_CTX_free(curCTX);
-		curCTX = NULL;
-
 		ByteString dummy;
 		MacAlgorithm::verifyFinal(dummy);
 
@@ -176,11 +193,11 @@ bool OSSLEVPMacAlgorithm::verifyUpdate(const ByteString& originalData)
 	// The GOST implementation in OpenSSL will segfault if we update with zero length.
 	if (originalData.size() == 0) return true;
 
-	if (!HMAC_Update(curCTX, originalData.const_byte_str(), originalData.size()))
+	if (!EVP_MAC_update(curCTX, originalData.const_byte_str(), originalData.size()))
 	{
-		ERROR_MSG("HMAC_Update failed");
+		ERROR_MSG("EVP_MAC_update failed");
 
-		HMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		ByteString dummy;
@@ -200,20 +217,22 @@ bool OSSLEVPMacAlgorithm::verifyFinal(ByteString& signature)
 	}
 
 	ByteString macResult;
-	unsigned int outLen = EVP_MD_size(getEVPHash());
+	size_t outLen = EVP_MD_get_size(getEVPHash());
 	macResult.resize(outLen);
 
-	if (!HMAC_Final(curCTX, &macResult[0], &outLen))
+	if (!EVP_MAC_final(curCTX, &macResult[0], &outLen, macResult.size()))
 	{
-		ERROR_MSG("HMAC_Final failed");
+		ERROR_MSG("EVP_MAC_final failed");
 
-		HMAC_CTX_free(curCTX);
+		EVP_MAC_CTX_free(curCTX);
 		curCTX = NULL;
 
 		return false;
 	}
 
-	HMAC_CTX_free(curCTX);
+	macResult.resize(outLen);
+
+	EVP_MAC_CTX_free(curCTX);
 	curCTX = NULL;
 
 	return macResult == signature;

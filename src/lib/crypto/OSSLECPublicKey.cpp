@@ -33,28 +33,31 @@
 #include "config.h"
 #ifdef WITH_ECC
 #include "log.h"
+#include "DerUtil.h"
 #include "OSSLECPublicKey.h"
 #include "OSSLUtil.h"
 #include <openssl/bn.h>
+#include <openssl/x509.h>
+#include <openssl/core_names.h>
 #include <string.h>
 
 // Constructors
 OSSLECPublicKey::OSSLECPublicKey()
 {
-	eckey = EC_KEY_new();
+	pkey = NULL;
 }
 
-OSSLECPublicKey::OSSLECPublicKey(const EC_KEY* inECKEY)
+OSSLECPublicKey::OSSLECPublicKey(const EVP_PKEY* inPKEY)
 {
-	eckey = EC_KEY_new();
+	pkey = NULL;
 
-	setFromOSSL(inECKEY);
+	setFromOSSL(inPKEY);
 }
 
 // Destructor
 OSSLECPublicKey::~OSSLECPublicKey()
 {
-	EC_KEY_free(eckey);
+	EVP_PKEY_free(pkey);
 }
 
 // The type
@@ -63,39 +66,57 @@ OSSLECPublicKey::~OSSLECPublicKey()
 // Get the base point order length
 unsigned long OSSLECPublicKey::getOrderLength() const
 {
-	const EC_GROUP* grp = EC_KEY_get0_group(eckey);
-	if (grp != NULL)
+	EC_GROUP* grp = OSSL::byteString2grp(ec);
+	if (grp == NULL) return 0;
+
+	unsigned long len = 0;
+	BIGNUM* order = BN_new();
+	if (order != NULL && EC_GROUP_get_order(grp, order, NULL))
 	{
-		BIGNUM* order = BN_new();
-		if (order == NULL)
-			return 0;
-		if (!EC_GROUP_get_order(grp, order, NULL))
-		{
-			BN_clear_free(order);
-			return 0;
-		}
-		unsigned long len = BN_num_bytes(order);
-		BN_clear_free(order);
-		return len;
+		len = BN_num_bytes(order);
 	}
-	return 0;
+
+	BN_clear_free(order);
+	EC_GROUP_free(grp);
+
+	return len;
 }
 
 // Set from OpenSSL representation
-void OSSLECPublicKey::setFromOSSL(const EC_KEY* inECKEY)
+void OSSLECPublicKey::setFromOSSL(const EVP_PKEY* inPKEY)
 {
-	const EC_GROUP* grp = EC_KEY_get0_group(inECKEY);
-	if (grp != NULL)
+	// For EC keys this yields the ECPKParameters encoding, named or explicit
+	unsigned char* der = NULL;
+	int derLen = i2d_KeyParams(inPKEY, &der);
+	if (derLen <= 0) return;
+
+	ByteString inEC(der, derLen);
+	OPENSSL_free(der);
+	setEC(inEC);
+
+	EC_GROUP* grp = OSSL::byteString2grp(inEC);
+	if (grp == NULL) return;
+
+	size_t pubLen = 0;
+	if (EVP_PKEY_get_octet_string_param(inPKEY, OSSL_PKEY_PARAM_PUB_KEY, NULL, 0, &pubLen) &&
+	    pubLen != 0)
 	{
-		ByteString inEC = OSSL::grp2ByteString(grp);
-		setEC(inEC);
+		ByteString raw;
+		raw.resize(pubLen);
+
+		EC_POINT* pt = EC_POINT_new(grp);
+		if (pt != NULL &&
+		    EVP_PKEY_get_octet_string_param(inPKEY, OSSL_PKEY_PARAM_PUB_KEY, &raw[0], pubLen, &pubLen) &&
+		    EC_POINT_oct2point(grp, pt, &raw[0], pubLen, NULL))
+		{
+			// Normalise to the uncompressed form used for storage
+			ByteString inQ = OSSL::pt2ByteString(pt, grp);
+			setQ(inQ);
+		}
+		EC_POINT_free(pt);
 	}
-	const EC_POINT* pub = EC_KEY_get0_public_key(inECKEY);
-	if (pub != NULL && grp != NULL)
-	{
-		ByteString inQ = OSSL::pt2ByteString(pub, grp);
-		setQ(inQ);
-	}
+
+	EC_GROUP_free(grp);
 }
 
 // Check if the key is of the given type
@@ -109,23 +130,31 @@ void OSSLECPublicKey::setEC(const ByteString& inEC)
 {
 	ECPublicKey::setEC(inEC);
 
-	EC_GROUP* grp = OSSL::byteString2grp(inEC);
-	EC_KEY_set_group(eckey, grp);
-	EC_GROUP_free(grp);
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 void OSSLECPublicKey::setQ(const ByteString& inQ)
 {
 	ECPublicKey::setQ(inQ);
 
-	EC_POINT* pub = OSSL::byteString2pt(inQ, EC_KEY_get0_group(eckey));
-	EC_KEY_set_public_key(eckey, pub);
-	EC_POINT_free(pub);
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
 }
 
 // Retrieve the OpenSSL representation of the key
-EC_KEY* OSSLECPublicKey::getOSSLKey()
+EVP_PKEY* OSSLECPublicKey::getOSSLKey()
 {
-	return eckey;
+	if (pkey == NULL) createOSSLKey();
+
+	return pkey;
+}
+
+// Create the OpenSSL representation of the key
+void OSSLECPublicKey::createOSSLKey()
+{
+	if (pkey != NULL) return;
+
+	pkey = OSSL::ec2PKey(ec, &q, NULL);
 }
 #endif

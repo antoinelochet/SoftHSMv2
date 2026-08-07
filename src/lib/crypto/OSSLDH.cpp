@@ -35,17 +35,12 @@
 #include "OSSLDH.h"
 #include "CryptoFactory.h"
 #include "DHParameters.h"
-#include "OSSLComp.h"
 #include "OSSLDHKeyPair.h"
 #include "OSSLUtil.h"
 #include <algorithm>
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-#include <openssl/dh.h>
-#else
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
 #include <openssl/provider.h>
-#endif
 #include <openssl/pem.h>
 #include <openssl/err.h>
 
@@ -146,50 +141,6 @@ bool OSSLDH::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParameters
 		return false;
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// Generate the key-pair
-	DH* dh = DH_new();
-	if (dh == NULL)
-	{
-		ERROR_MSG("Failed to instantiate OpenSSL DH object");
-		BN_free(bn_p);
-		BN_free(bn_g);
-
-		return false;
-	}
-
-	if (!DH_set0_pqg(dh, bn_p, NULL, bn_g))
-	{
-		ERROR_MSG("DH set pqg failed (0x%08X)", ERR_get_error());
-
-		BN_free(bn_p);
-		BN_free(bn_g);
-		DH_free(dh);
-
-		return false;
-	}
-
-	if (params->getXBitLength() > 0)
-	{
-		if (!DH_set_length(dh, params->getXBitLength()))
-		{
-			ERROR_MSG("DH set length failed (0x%08X)", ERR_get_error());
-
-			DH_free(dh);
-
-			return false;
-		}
-	}
-
-	if (DH_generate_key(dh) != 1)
-	{
-		ERROR_MSG("DH key generation failed (0x%08X)", ERR_get_error());
-
-		DH_free(dh);
-
-		return false;
-	}
-#else
 	EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_DH, NULL);
 	if (!ctx)
 	{
@@ -278,8 +229,6 @@ bool OSSLDH::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParameters
 	EVP_PKEY_free(dh);
 	dh = new_dh;
 
-#endif
-
 	// Create an asymmetric key-pair object to return
 	OSSLDHKeyPair* kp = new OSSLDHKeyPair();
 
@@ -289,11 +238,7 @@ bool OSSLDH::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParameters
 	*ppKeyPair = kp;
 
 	// Release the key
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	DH_free(dh);
-#else
 	EVP_PKEY_free(dh);
-#endif
 
 	return true;
 }
@@ -308,42 +253,6 @@ bool OSSLDH::deriveKey(SymmetricKey **ppSymmetricKey, PublicKey* publicKey, Priv
 		return false;
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// Get keys
-	DH *pub = ((OSSLDHPublicKey *)publicKey)->getOSSLKey();
-	DH *priv = ((OSSLDHPrivateKey *)privateKey)->getOSSLKey();
-	if (pub == NULL || priv == NULL)
-	{
-		ERROR_MSG("Failed to get OpenSSL DH keys");
-
-		return false;
-	}
-	const BIGNUM* bn_pub_key = NULL;
-	DH_get0_key(pub, &bn_pub_key, NULL);
-	if (bn_pub_key == NULL)
-	{
-		ERROR_MSG("Failed to get OpenSSL DH keys");
-
-		return false;
-	}
-
-	// Derive the secret
-	ByteString secret, derivedSecret;
-	int size = DH_size(priv);
-	secret.wipe(size);
-	derivedSecret.wipe(size);
-	int keySize = DH_compute_key(&derivedSecret[0], bn_pub_key, priv);
-
-	if (keySize <= 0)
-	{
-		ERROR_MSG("DH key derivation failed (0x%08X)", ERR_get_error());
-
-		return false;
-	}
-
-	// We compensate that OpenSSL removes leading zeros
-	memcpy(&secret[0] + size - keySize, &derivedSecret[0], keySize);
-#else
 	// Get keys
 	EVP_PKEY *pub = ((OSSLDHPublicKey *)publicKey)->getOSSLKey();
 	EVP_PKEY *priv = ((OSSLDHPrivateKey *)privateKey)->getOSSLKey();
@@ -401,7 +310,6 @@ bool OSSLDH::deriveKey(SymmetricKey **ppSymmetricKey, PublicKey* publicKey, Priv
 	}
 
 	EVP_PKEY_CTX_free(ctx);
-#endif
 
 	*ppSymmetricKey = new SymmetricKey(secret.size() * 8);
 	if (*ppSymmetricKey == NULL)
@@ -447,28 +355,6 @@ bool OSSLDH::generateParameters(AsymmetricParameters** ppParams, void* parameter
 		return false;
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	DH* dh = DH_new();
-	if (dh == NULL)
-	{
-		ERROR_MSG("Failed to create DH object");
-
-		return false;
-	}
-
-	if (!DH_generate_parameters_ex(dh, bitLen, 2, NULL))
-	{
-		ERROR_MSG("Failed to generate %d bit DH parameters", bitLen);
-
-		DH_free(dh);
-
-		return false;
-	}
-
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_g = NULL;
-	DH_get0_pqg(dh, &bn_p, NULL, &bn_g);
-#else
 	EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_DH, NULL);
 	if (!ctx)
 	{
@@ -521,7 +407,6 @@ bool OSSLDH::generateParameters(AsymmetricParameters** ppParams, void* parameter
 		EVP_PKEY_free(dh_params);
 		return false;
 	}
-#endif
 
 	// Store the DH parameters
 	DHParameters* params = new DHParameters();
@@ -530,13 +415,9 @@ bool OSSLDH::generateParameters(AsymmetricParameters** ppParams, void* parameter
 
 	*ppParams = params;
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	DH_free(dh);
-#else
 	EVP_PKEY_free(dh_params);
 	BN_free(bn_p);
 	BN_free(bn_g);
-#endif
 
 	return true;
 }

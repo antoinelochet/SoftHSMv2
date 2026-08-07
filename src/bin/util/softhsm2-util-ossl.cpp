@@ -38,7 +38,6 @@
 #define UTIL_OSSL
 #include "softhsm2-util.h"
 #include "softhsm2-util-ossl.h"
-#include "OSSLComp.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -147,10 +146,10 @@ int crypto_import_key_pair
 		return 1;
 	}
 
-	RSA* rsa = NULL;
-	DSA* dsa = NULL;
+	EVP_PKEY* rsa = NULL;
+	EVP_PKEY* dsa = NULL;
 #ifdef WITH_ECC
-	EC_KEY* ecdsa = NULL;
+	EVP_PKEY* ecdsa = NULL;
 #endif
 #ifdef WITH_EDDSA
 	EVP_PKEY* eddsa = NULL;
@@ -162,26 +161,25 @@ int crypto_import_key_pair
 	EVP_PKEY* mlkem = NULL;
 #endif
 
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	int keyType = EVP_PKEY_get_id(pkey);
 	if (keyType != EVP_PKEY_KEYMGMT) 
 	{
 		switch (keyType)
-#else
-	switch (EVP_PKEY_type(EVP_PKEY_id(pkey)))
-#endif
 	
 		{
 			case EVP_PKEY_RSA:
 			case EVP_PKEY_RSA_PSS:
-				rsa = EVP_PKEY_get1_RSA(pkey);
+				EVP_PKEY_up_ref(pkey);
+				rsa = pkey;
 				break;
 			case EVP_PKEY_DSA:
-				dsa = EVP_PKEY_get1_DSA(pkey);
+				EVP_PKEY_up_ref(pkey);
+				dsa = pkey;
 				break;
 	#ifdef WITH_ECC
 			case EVP_PKEY_EC:
-				ecdsa = EVP_PKEY_get1_EC_KEY(pkey);
+				EVP_PKEY_up_ref(pkey);
+				ecdsa = pkey;
 				break;
 	#endif
 	#ifdef WITH_EDDSA
@@ -199,7 +197,6 @@ int crypto_import_key_pair
 				return 1;
 				break;
 		}
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	} else {
 		// Provider Keys management
 		#if defined(WITH_ML_DSA) || defined(WITH_ML_KEM)
@@ -237,7 +234,6 @@ int crypto_import_key_pair
 		#endif
 		#endif
 	}
-#endif
 	EVP_PKEY_free(pkey);
 
 	int result = 0;
@@ -245,18 +241,18 @@ int crypto_import_key_pair
 	if (rsa)
 	{
 		result = crypto_save_rsa(hSession, label, objID, objIDLen, noPublicKey, rsa);
-		RSA_free(rsa);
+		EVP_PKEY_free(rsa);
 	}
 	else if (dsa)
 	{
 		result = crypto_save_dsa(hSession, label, objID, objIDLen, noPublicKey, dsa);
-		DSA_free(dsa);
+		EVP_PKEY_free(dsa);
 	}
 #ifdef WITH_ECC
 	else if (ecdsa)
 	{
 		result = crypto_save_ecdsa(hSession, label, objID, objIDLen, noPublicKey, ecdsa);
-		EC_KEY_free(ecdsa);
+		EVP_PKEY_free(ecdsa);
 	}
 #endif
 #ifdef WITH_EDDSA
@@ -504,7 +500,7 @@ int crypto_save_rsa
 	char* objID,
 	size_t objIDLen,
 	int noPublicKey,
-	RSA* rsa
+	EVP_PKEY* rsa
 )
 {
 	rsa_key_material_t* keyMat = crypto_malloc_rsa(rsa);
@@ -581,7 +577,7 @@ int crypto_save_rsa
 }
 
 // Convert the OpenSSL key to binary
-rsa_key_material_t* crypto_malloc_rsa(RSA* rsa)
+rsa_key_material_t* crypto_malloc_rsa(EVP_PKEY* rsa)
 {
 	if (rsa == NULL)
 	{
@@ -594,17 +590,35 @@ rsa_key_material_t* crypto_malloc_rsa(RSA* rsa)
 		return NULL;
 	}
 
-	const BIGNUM* bn_e = NULL;
-	const BIGNUM* bn_n = NULL;
-	const BIGNUM* bn_d = NULL;
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_q = NULL;
-	const BIGNUM* bn_dmp1 = NULL;
-	const BIGNUM* bn_dmq1 = NULL;
-	const BIGNUM* bn_iqmp = NULL;
-	RSA_get0_factors(rsa, &bn_p, &bn_q);
-	RSA_get0_crt_params(rsa, &bn_dmp1, &bn_dmq1, &bn_iqmp);
-	RSA_get0_key(rsa, &bn_n, &bn_e, &bn_d);
+	BIGNUM* bn_e = NULL;
+	BIGNUM* bn_n = NULL;
+	BIGNUM* bn_d = NULL;
+	BIGNUM* bn_p = NULL;
+	BIGNUM* bn_q = NULL;
+	BIGNUM* bn_dmp1 = NULL;
+	BIGNUM* bn_dmq1 = NULL;
+	BIGNUM* bn_iqmp = NULL;
+
+	if (!EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_E, &bn_e) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_N, &bn_n) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_D, &bn_d) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_FACTOR1, &bn_p) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_FACTOR2, &bn_q) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_EXPONENT1, &bn_dmp1) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_EXPONENT2, &bn_dmq1) ||
+	    !EVP_PKEY_get_bn_param(rsa, OSSL_PKEY_PARAM_RSA_COEFFICIENT1, &bn_iqmp))
+	{
+		BN_clear_free(bn_e);
+		BN_clear_free(bn_n);
+		BN_clear_free(bn_d);
+		BN_clear_free(bn_p);
+		BN_clear_free(bn_q);
+		BN_clear_free(bn_dmp1);
+		BN_clear_free(bn_dmq1);
+		BN_clear_free(bn_iqmp);
+		crypto_free_rsa(keyMat);
+		return NULL;
+	}
 
 	keyMat->sizeE = BN_num_bytes(bn_e);
 	keyMat->sizeN = BN_num_bytes(bn_n);
@@ -636,6 +650,14 @@ rsa_key_material_t* crypto_malloc_rsa(RSA* rsa)
 		!keyMat->bigIQMP
 	)
 	{
+		BN_clear_free(bn_e);
+		BN_clear_free(bn_n);
+		BN_clear_free(bn_d);
+		BN_clear_free(bn_p);
+		BN_clear_free(bn_q);
+		BN_clear_free(bn_dmp1);
+		BN_clear_free(bn_dmq1);
+		BN_clear_free(bn_iqmp);
 		crypto_free_rsa(keyMat);
 		return NULL;
 	}
@@ -648,6 +670,15 @@ rsa_key_material_t* crypto_malloc_rsa(RSA* rsa)
 	BN_bn2bin(bn_dmp1, (unsigned char*)keyMat->bigDMP1);
 	BN_bn2bin(bn_dmq1, (unsigned char*)keyMat->bigDMQ1);
 	BN_bn2bin(bn_iqmp, (unsigned char*)keyMat->bigIQMP);
+
+	BN_clear_free(bn_e);
+	BN_clear_free(bn_n);
+	BN_clear_free(bn_d);
+	BN_clear_free(bn_p);
+	BN_clear_free(bn_q);
+	BN_clear_free(bn_dmp1);
+	BN_clear_free(bn_dmq1);
+	BN_clear_free(bn_iqmp);
 
 	return keyMat;
 }
@@ -675,7 +706,7 @@ int crypto_save_dsa
 	char* objID,
 	size_t objIDLen,
 	int noPublicKey,
-	DSA* dsa
+	EVP_PKEY* dsa
 )
 {
 	dsa_key_material_t* keyMat = crypto_malloc_dsa(dsa);
@@ -750,7 +781,7 @@ int crypto_save_dsa
 }
 
 // Convert the OpenSSL key to binary
-dsa_key_material_t* crypto_malloc_dsa(DSA* dsa)
+dsa_key_material_t* crypto_malloc_dsa(EVP_PKEY* dsa)
 {
 	if (dsa == NULL)
 	{
@@ -763,13 +794,26 @@ dsa_key_material_t* crypto_malloc_dsa(DSA* dsa)
 		return NULL;
 	}
 
-	const BIGNUM* bn_p = NULL;
-	const BIGNUM* bn_q = NULL;
-	const BIGNUM* bn_g = NULL;
-	const BIGNUM* bn_priv_key = NULL;
-	const BIGNUM* bn_pub_key = NULL;
-	DSA_get0_pqg(dsa, &bn_p, &bn_q, &bn_g);
-	DSA_get0_key(dsa, &bn_pub_key, &bn_priv_key);
+	BIGNUM* bn_p = NULL;
+	BIGNUM* bn_q = NULL;
+	BIGNUM* bn_g = NULL;
+	BIGNUM* bn_priv_key = NULL;
+	BIGNUM* bn_pub_key = NULL;
+
+	if (!EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_P, &bn_p) ||
+	    !EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_Q, &bn_q) ||
+	    !EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_G, &bn_g) ||
+	    !EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_PRIV_KEY, &bn_priv_key) ||
+	    !EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_PUB_KEY, &bn_pub_key))
+	{
+		BN_clear_free(bn_p);
+		BN_clear_free(bn_q);
+		BN_clear_free(bn_g);
+		BN_clear_free(bn_priv_key);
+		BN_clear_free(bn_pub_key);
+		crypto_free_dsa(keyMat);
+		return NULL;
+	}
 
 	keyMat->sizeP = BN_num_bytes(bn_p);
 	keyMat->sizeQ = BN_num_bytes(bn_q);
@@ -785,6 +829,11 @@ dsa_key_material_t* crypto_malloc_dsa(DSA* dsa)
 
 	if (!keyMat->bigP || !keyMat->bigQ || !keyMat->bigG || !keyMat->bigX || !keyMat->bigY)
 	{
+		BN_clear_free(bn_p);
+		BN_clear_free(bn_q);
+		BN_clear_free(bn_g);
+		BN_clear_free(bn_priv_key);
+		BN_clear_free(bn_pub_key);
 		crypto_free_dsa(keyMat);
 		return NULL;
 	}
@@ -795,9 +844,14 @@ dsa_key_material_t* crypto_malloc_dsa(DSA* dsa)
 	BN_bn2bin(bn_priv_key, (unsigned char*)keyMat->bigX);
 	BN_bn2bin(bn_pub_key, (unsigned char*)keyMat->bigY);
 
+	BN_clear_free(bn_p);
+	BN_clear_free(bn_q);
+	BN_clear_free(bn_g);
+	BN_clear_free(bn_priv_key);
+	BN_clear_free(bn_pub_key);
+
 	return keyMat;
 }
-
 // Free the memory of the key
 void crypto_free_dsa(dsa_key_material_t* keyMat)
 {
@@ -820,7 +874,7 @@ int crypto_save_ecdsa
 	char* objID,
 	size_t objIDLen,
 	int noPublicKey,
-	EC_KEY* ecdsa
+	EVP_PKEY* ecdsa
 )
 {
 	ecdsa_key_material_t* keyMat = crypto_malloc_ecdsa(ecdsa);
@@ -891,7 +945,7 @@ int crypto_save_ecdsa
 }
 
 // Convert the OpenSSL key to binary
-ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
+ecdsa_key_material_t* crypto_malloc_ecdsa(EVP_PKEY* ec_key)
 {
 	int result;
 
@@ -906,11 +960,56 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
 		return NULL;
 	}
 
-	const BIGNUM *d = EC_KEY_get0_private_key(ec_key);
-	const EC_GROUP *group = EC_KEY_get0_group(ec_key);
-	const EC_POINT *point = EC_KEY_get0_public_key(ec_key);
+	// For EC keys this yields the ECPKParameters encoding, named or explicit
+	unsigned char* derGroup = NULL;
+	int derGroupLen = i2d_KeyParams(ec_key, &derGroup);
+	BIGNUM* d = NULL;
+	EC_GROUP* group = NULL;
+	EC_POINT* point = NULL;
+	size_t pubLen = 0;
 
-	keyMat->sizeParams = i2d_ECPKParameters(group, NULL);
+	if (derGroupLen > 0)
+	{
+		const unsigned char* p = derGroup;
+		group = d2i_ECPKParameters(NULL, &p, derGroupLen);
+	}
+
+	if (group == NULL ||
+	    !EVP_PKEY_get_bn_param(ec_key, OSSL_PKEY_PARAM_PRIV_KEY, &d) ||
+	    !EVP_PKEY_get_octet_string_param(ec_key, OSSL_PKEY_PARAM_PUB_KEY, NULL, 0, &pubLen) ||
+	    pubLen == 0)
+	{
+		OPENSSL_free(derGroup);
+		BN_clear_free(d);
+		EC_GROUP_free(group);
+		crypto_free_ecdsa(keyMat);
+		return NULL;
+	}
+
+	// Re-encode the point so the stored form is uncompressed regardless of provider
+	unsigned char* rawPub = (unsigned char*)malloc(pubLen);
+	if (rawPub != NULL &&
+	    EVP_PKEY_get_octet_string_param(ec_key, OSSL_PKEY_PARAM_PUB_KEY, rawPub, pubLen, &pubLen))
+	{
+		point = EC_POINT_new(group);
+		if (point != NULL && !EC_POINT_oct2point(group, point, rawPub, pubLen, NULL))
+		{
+			EC_POINT_free(point);
+			point = NULL;
+		}
+	}
+	free(rawPub);
+
+	if (point == NULL)
+	{
+		OPENSSL_free(derGroup);
+		BN_clear_free(d);
+		EC_GROUP_free(group);
+		crypto_free_ecdsa(keyMat);
+		return NULL;
+	}
+
+	keyMat->sizeParams = derGroupLen;
 	keyMat->sizeD = BN_num_bytes(d);
 
 	keyMat->derParams = (CK_VOID_PTR)malloc(keyMat->sizeParams);
@@ -919,22 +1018,19 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
 
 	if (!keyMat->derParams || !keyMat->bigD)
 	{
+		OPENSSL_free(derGroup);
+		BN_clear_free(d);
+		EC_GROUP_free(group);
+		EC_POINT_free(point);
 		crypto_free_ecdsa(keyMat);
 		return NULL;
 	}
 
-	/*
-	 * i2d functions increment the pointer, so we have to use a
-	 * sacrificial pointer
-	 */
-	unsigned char *derParams = (unsigned char*) keyMat->derParams;
-	result = i2d_ECPKParameters(group, &derParams);
-	if (result == 0)
-	{
-		crypto_free_ecdsa(keyMat);
-		return NULL;
-	}
+	memcpy(keyMat->derParams, derGroup, derGroupLen);
+	OPENSSL_free(derGroup);
+
 	BN_bn2bin(d, (unsigned char*)keyMat->bigD);
+	BN_clear_free(d);
 
 	size_t point_length = EC_POINT_point2oct(group,
 					      point,
@@ -950,6 +1046,8 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
 		keyMat->derQ = (CK_VOID_PTR)malloc(keyMat->sizeQ);
 		if (!keyMat->derQ)
 		{
+			EC_GROUP_free(group);
+			EC_POINT_free(point);
 			crypto_free_ecdsa(keyMat);
 			return NULL;
 		}
@@ -965,6 +1063,8 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
 					    NULL);
 		if (result == 0)
 		{
+			EC_GROUP_free(group);
+			EC_POINT_free(point);
 			crypto_free_ecdsa(keyMat);
 			return NULL;
 		}
@@ -984,6 +1084,8 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
 		keyMat->derQ = (CK_VOID_PTR)malloc(keyMat->sizeQ);
 		if (!keyMat->derQ)
 		{
+			EC_GROUP_free(group);
+			EC_POINT_free(point);
 			crypto_free_ecdsa(keyMat);
 			return NULL;
 		}
@@ -1007,10 +1109,15 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(EC_KEY* ec_key)
 					    NULL);
 		if (result == 0)
 		{
+			EC_GROUP_free(group);
+			EC_POINT_free(point);
 			crypto_free_ecdsa(keyMat);
 			return NULL;
 		}
 	}
+
+	EC_GROUP_free(group);
+	EC_POINT_free(point);
 
 	return keyMat;
 }

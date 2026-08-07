@@ -89,9 +89,6 @@
     <ClInclude Include="..\..\src\bin\common\getpw.h" />
     <ClInclude Include="..\..\src\bin\common\library.h" />
     <ClInclude Include="..\..\src\bin\keyconv\softhsm2-keyconv.h" />
-@IF OPENSSL
-    <ClInclude Include="..\..\src\lib\crypto\OSSLComp.h" />
-@END OPENSSL
     <ClInclude Include="..\config.h" />
   </ItemGroup>
   <ItemGroup>
@@ -103,7 +100,6 @@
 @END BOTAN
 @IF OPENSSL
     <ClCompile Include="..\..\src\bin\keyconv\softhsm2-keyconv-ossl.cpp" />
-    <ClCompile Include="..\..\src\lib\crypto\OSSLComp.cpp" />
 @END OPENSSL
     <ClCompile Include="..\..\src\bin\keyconv\softhsm2-keyconv.cpp" />
     <ClCompile Include="..\..\src\bin\win32\getpassphase.cpp" />

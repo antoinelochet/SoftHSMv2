@@ -32,7 +32,6 @@
 
 #include "config.h"
 #include "OSSLEVPHashAlgorithm.h"
-#include "OSSLComp.h"
 
 // Destructor
 OSSLEVPHashAlgorithm::~OSSLEVPHashAlgorithm()

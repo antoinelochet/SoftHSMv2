@@ -17,7 +17,6 @@
 #include "MLDSAParameters.h"
 #include "MLDSAMechanismParam.h"
 #include "OSSLMLDSAKeyPair.h"
-#include "OSSLComp.h"
 #include "OSSLUtil.h"
 #include <algorithm>
 #include <openssl/core_names.h>

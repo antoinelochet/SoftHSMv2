@@ -38,7 +38,6 @@
 #include "ECParameters.h"
 #include "EDDSAMechanismParam.h"
 #include "OSSLEDKeyPair.h"
-#include "OSSLComp.h"
 #include "OSSLUtil.h"
 #include <algorithm>
 #include <openssl/evp.h>
