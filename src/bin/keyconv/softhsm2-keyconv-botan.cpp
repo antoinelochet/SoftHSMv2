@@ -45,6 +45,7 @@
 #include <botan/rsa.h>
 #include <botan/dsa.h>
 #include <botan/bigint.h>
+#include <botan/dl_group.h>
 #include <botan/version.h>
 
 // Init Botan
@@ -165,7 +166,11 @@ int save_dsa_pkcs8(char* out_path, char* file_pin, key_material_t* pkey)
 
 	try
 	{
+#if BOTAN_VERSION_MAJOR >= 3
+		priv_key = new Botan::DSA_PrivateKey(Botan::DL_Group(bigDP, bigDQ, bigDG), bigDX);
+#else
 		priv_key = new Botan::DSA_PrivateKey(*rng, Botan::DL_Group(bigDP, bigDQ, bigDG), bigDX);
+#endif
 	}
 	catch (std::exception& e)
 	{

@@ -7,6 +7,8 @@
 */
 
 #include <botan/version.h>
+#include <botan/assert.h>
+#include <botan/exceptn.h>
 
 // ECB cipher mode was dropped in Botan 2.0.0
 // so including this code in SoftHSM for continued support
@@ -46,8 +48,25 @@ std::string ECB_Mode::name() const
 
 size_t ECB_Mode::update_granularity() const
    {
+#if BOTAN_VERSION_MAJOR >= 3
+   // Botan 3 splits the minimum block size from the preferred one
+   return cipher().block_size();
+#else
+   return cipher().parallel_bytes();
+#endif
+   }
+
+#if BOTAN_VERSION_MAJOR >= 3
+size_t ECB_Mode::ideal_granularity() const
+   {
    return cipher().parallel_bytes();
    }
+
+bool ECB_Mode::has_keying_material() const
+   {
+   return m_cipher->has_keying_material();
+   }
+#endif
 
 Key_Length_Specification ECB_Mode::key_spec() const
    {
@@ -64,10 +83,17 @@ bool ECB_Mode::valid_nonce_length(size_t n) const
    return (n == 0);
    }
 
+#if BOTAN_VERSION_CODE >= BOTAN_VERSION_CODE_FOR(3,2,0)
+void ECB_Mode::key_schedule(std::span<const uint8_t> key)
+   {
+   m_cipher->set_key(key);
+   }
+#else
 void ECB_Mode::key_schedule(const byte key[], size_t length)
    {
    m_cipher->set_key(key, length);
    }
+#endif
 
 void ECB_Mode::start_msg(const byte[], size_t nonce_len)
    {
@@ -101,7 +127,11 @@ size_t ECB_Encryption::output_length(size_t input_length) const
       return round_up(input_length, cipher().block_size());
    }
 
+#if BOTAN_VERSION_MAJOR >= 3
+size_t ECB_Encryption::process_msg(uint8_t buf[], size_t sz)
+#else
 size_t ECB_Encryption::process(uint8_t buf[], size_t sz)
+#endif
    {
    const size_t BS = cipher().block_size();
    BOTAN_ASSERT(sz % BS == 0, "ECB input is full blocks");
@@ -110,7 +140,11 @@ size_t ECB_Encryption::process(uint8_t buf[], size_t sz)
    return sz;
    }
 
+#if BOTAN_VERSION_MAJOR >= 3
+void ECB_Encryption::finish_msg(secure_vector<uint8_t>& buffer, size_t offset)
+#else
 void ECB_Encryption::finish(secure_vector<byte>& buffer, size_t offset)
+#endif
    {
    BOTAN_ASSERT(buffer.size() >= offset, "Offset is sane");
    const size_t sz = buffer.size() - offset;
@@ -143,7 +177,11 @@ size_t ECB_Decryption::minimum_final_size() const
    return cipher().block_size();
    }
 
+#if BOTAN_VERSION_MAJOR >= 3
+size_t ECB_Decryption::process_msg(uint8_t buf[], size_t sz)
+#else
 size_t ECB_Decryption::process(uint8_t buf[], size_t sz)
+#endif
    {
    const size_t BS = cipher().block_size();
    BOTAN_ASSERT(sz % BS == 0, "Input is full blocks");
@@ -170,7 +208,11 @@ size_t pkcs7_unpad(const byte block[], size_t size)
 
 }
 
+#if BOTAN_VERSION_MAJOR >= 3
+void ECB_Decryption::finish_msg(secure_vector<uint8_t>& buffer, size_t offset)
+#else
 void ECB_Decryption::finish(secure_vector<byte>& buffer, size_t offset)
+#endif
    {
    BOTAN_ASSERT(buffer.size() >= offset, "Offset is sane");
    const size_t sz = buffer.size() - offset;

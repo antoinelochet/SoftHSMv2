@@ -42,6 +42,11 @@ Minimum required versions:
 If you are using Botan, use at least version 2.6.0. This will improve
 the performance when doing public key operations.
 
+Botan 3 is also supported. It is picked up automatically when both Botan 2
+and Botan 3 are installed. Note that Botan 3 headers require C++20, so
+SoftHSM is built as C++20 in that case; with Botan 2 or OpenSSL the C++11
+baseline is kept.
+
 The GNU Autotools (Autoconf, Automake, Libtool) are also required for building
 the software. It is also recommended to install pkg-config so that the
 configure script can find the installed software.

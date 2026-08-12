@@ -35,9 +35,12 @@
 
 #include "config.h"
 #include "ByteString.h"
+#include "BotanCompat.h"
 #include <botan/bigint.h>
 #include <botan/asn1_obj.h>
+#if BOTAN_VERSION_MAJOR < 3
 #include <botan/oids.h>
+#endif
 #if defined(WITH_ECC) || defined(WITH_GOST)
 #include <botan/ec_group.h>
 #endif

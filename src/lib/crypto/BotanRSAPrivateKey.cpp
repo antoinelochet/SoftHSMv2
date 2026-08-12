@@ -36,12 +36,15 @@
 #include "BotanUtil.h"
 #include "BotanRNG.h"
 #include "BotanCryptoFactory.h"
+#include "BotanCompat.h"
 #include <string.h>
 #include <botan/pkcs8.h>
 #include <botan/pkcs8.h>
 #include <botan/ber_dec.h>
 #include <botan/der_enc.h>
+#if BOTAN_VERSION_MAJOR < 3
 #include <botan/oids.h>
+#endif
 #include <botan/version.h>
 
 // Constructors
@@ -208,15 +211,15 @@ bool BotanRSAPrivateKey::PKCS8Decode(const ByteString& ber)
 	{
 
 		Botan::BER_Decoder(source)
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 			.decode_and_check<size_t>(0, "Unknown PKCS #8 version number")
 			.decode(alg_id)
-			.decode(keydata, Botan::OCTET_STRING)
+			.decode(keydata, BotanCompat::OCTET_STRING)
 			.discard_remaining()
 		.end_cons();
 		if (keydata.empty())
 			throw Botan::Decoding_Error("PKCS #8 private key decoding failed");
-		if (Botan::OIDS::lookup(alg_id.oid).compare("RSA"))
+		if (BotanCompat::oid2Str(BotanCompat::algIdOid(alg_id)).compare("RSA"))
 		{
 			ERROR_MSG("Decoded private key not RSA");
 

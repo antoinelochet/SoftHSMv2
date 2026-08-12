@@ -34,6 +34,7 @@
 #include "log.h"
 #include "BotanDSAPublicKey.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <string.h>
 
 // Constructors
@@ -61,13 +62,13 @@ BotanDSAPublicKey::~BotanDSAPublicKey()
 // Set from Botan representation
 void BotanDSAPublicKey::setFromBotan(const Botan::DSA_PublicKey* inDSA)
 {
-	ByteString inP = BotanUtil::bigInt2ByteString(inDSA->group_p());
+	ByteString inP = BotanUtil::bigInt2ByteString(BotanCompat::groupP(*inDSA));
 	setP(inP);
-	ByteString inQ = BotanUtil::bigInt2ByteString(inDSA->group_q());
+	ByteString inQ = BotanUtil::bigInt2ByteString(BotanCompat::groupQ(*inDSA));
 	setQ(inQ);
-	ByteString inG = BotanUtil::bigInt2ByteString(inDSA->group_g());
+	ByteString inG = BotanUtil::bigInt2ByteString(BotanCompat::groupG(*inDSA));
 	setG(inG);
-	ByteString inY = BotanUtil::bigInt2ByteString(inDSA->get_y());
+	ByteString inY = BotanUtil::bigInt2ByteString(BotanCompat::getY(*inDSA));
 	setY(inY);
 }
 

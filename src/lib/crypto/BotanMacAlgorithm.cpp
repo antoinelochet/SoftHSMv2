@@ -38,6 +38,7 @@
 
 #include <botan/symkey.h>
 #include <botan/mac.h>
+#include <botan/mem_ops.h>
 #include <botan/version.h>
 
 // Constructor
@@ -278,5 +279,5 @@ bool BotanMacAlgorithm::verifyFinal(ByteString& signature)
 	delete mac;
 	mac = NULL;
 
-        return Botan::same_mem(&signature[0], macResult.data(), macResult.size());
+        return Botan::constant_time_compare(&signature[0], macResult.data(), macResult.size());
 }

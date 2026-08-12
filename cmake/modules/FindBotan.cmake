@@ -23,11 +23,11 @@ endif()
 
 
 if(NOT BOTAN_FOUND)
-  find_path(BOTAN_INCLUDE_DIRS NAMES botan/botan.h
-      PATH_SUFFIXES botan-2
+  find_path(BOTAN_INCLUDE_DIRS NAMES botan/version.h
+      PATH_SUFFIXES botan-3 botan-2
       DOC "The botan include directory")
 
-  find_library(BOTAN_LIBRARIES NAMES botan botan-2
+  find_library(BOTAN_LIBRARIES NAMES botan-3 botan-2 botan
       DOC "The botan library")
 
   # Use some standard module to handle the QUIETLY and REQUIRED arguments, and
@@ -42,4 +42,14 @@ if(NOT BOTAN_FOUND)
   endif()
 endif()
 
-mark_as_advanced(BOTAN_INCLUDE_DIRS BOTAN_LIBRARIES)
+if(BOTAN_FOUND AND NOT BOTAN_VERSION_MAJOR)
+  find_file(BOTAN_BUILD_H botan/build.h PATHS ${BOTAN_INCLUDE_DIRS} NO_DEFAULT_PATH)
+  if(BOTAN_BUILD_H)
+    file(STRINGS ${BOTAN_BUILD_H} _botan_major_line
+         REGEX "^#define[ \t]+BOTAN_VERSION_MAJOR[ \t]+[0-9]+")
+    string(REGEX REPLACE ".*BOTAN_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1"
+           BOTAN_VERSION_MAJOR "${_botan_major_line}")
+  endif()
+endif()
+
+mark_as_advanced(BOTAN_INCLUDE_DIRS BOTAN_LIBRARIES BOTAN_BUILD_H)

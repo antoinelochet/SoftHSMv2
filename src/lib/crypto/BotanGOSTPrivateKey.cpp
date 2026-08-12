@@ -37,12 +37,17 @@
 #include "BotanCryptoFactory.h"
 #include "BotanRNG.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <string.h>
 #include <botan/pkcs8.h>
 #include <botan/ber_dec.h>
 #include <botan/der_enc.h>
+#if BOTAN_VERSION_MAJOR >= 3
+#include <botan/asn1_obj.h>
+#else
 #include <botan/asn1_oid.h>
 #include <botan/oids.h>
+#endif
 #include <botan/version.h>
 
 // Constructors
@@ -161,14 +166,14 @@ ByteString BotanGOSTPrivateKey::PKCS8Encode()
 	if (eckey == NULL) return der;
 	// Force EC_DOMPAR_ENC_OID
 	const size_t PKCS8_VERSION = 0;
-	const std::vector<uint8_t> parameters = eckey->domain().DER_encode(Botan::EC_DOMPAR_ENC_OID);
-	const Botan::AlgorithmIdentifier alg_id(Botan::OIDS::lookup("GOST-34.10"), parameters);
+	const std::vector<uint8_t> parameters = eckey->domain().DER_encode(BotanCompat::EC_DOMPAR_ENC_OID);
+	const Botan::AlgorithmIdentifier alg_id(BotanCompat::str2Oid("GOST-34.10"), parameters);
 	const Botan::secure_vector<uint8_t> ber =
 		Botan::DER_Encoder()
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 		    .encode(PKCS8_VERSION)
 		    .encode(alg_id)
-		    .encode(eckey->private_key_bits(), Botan::OCTET_STRING)
+		    .encode(eckey->private_key_bits(), BotanCompat::OCTET_STRING)
 		.end_cons()
 	    .get_contents();
 	der.resize(ber.size());
@@ -187,15 +192,15 @@ bool BotanGOSTPrivateKey::PKCS8Decode(const ByteString& ber)
 	try
 	{
 		Botan::BER_Decoder(source)
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 			.decode_and_check<size_t>(0, "Unknown PKCS #8 version number")
 			.decode(alg_id)
-			.decode(keydata, Botan::OCTET_STRING)
+			.decode(keydata, BotanCompat::OCTET_STRING)
 			.discard_remaining()
 		.end_cons();
 		if (keydata.empty())
 			throw Botan::Decoding_Error("PKCS #8 private key decoding failed");
-		if (Botan::OIDS::lookup(alg_id.oid).compare("GOST-34.10"))
+		if (BotanCompat::oid2Str(BotanCompat::algIdOid(alg_id)).compare("GOST-34.10"))
 		{
 			ERROR_MSG("Decoded private key not GOST-34.10");
 

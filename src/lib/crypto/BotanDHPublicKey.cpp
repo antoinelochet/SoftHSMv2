@@ -34,6 +34,7 @@
 #include "log.h"
 #include "BotanDHPublicKey.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <string.h>
 
 // Constructors
@@ -61,11 +62,11 @@ BotanDHPublicKey::~BotanDHPublicKey()
 // Set from Botan representation
 void BotanDHPublicKey::setFromBotan(const Botan::DH_PublicKey* inDH)
 {
-	ByteString inP = BotanUtil::bigInt2ByteString(inDH->group_p());
+	ByteString inP = BotanUtil::bigInt2ByteString(BotanCompat::groupP(*inDH));
 	setP(inP);
-	ByteString inG = BotanUtil::bigInt2ByteString(inDH->group_g());
+	ByteString inG = BotanUtil::bigInt2ByteString(BotanCompat::groupG(*inDH));
 	setG(inG);
-	ByteString inY = BotanUtil::bigInt2ByteString(inDH->get_y());
+	ByteString inY = BotanUtil::bigInt2ByteString(BotanCompat::getY(*inDH));
 	setY(inY);
 }
 

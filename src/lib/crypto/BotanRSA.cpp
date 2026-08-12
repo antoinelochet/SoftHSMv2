@@ -34,6 +34,7 @@
 #include "log.h"
 #include "BotanRSA.h"
 #include "BotanRNG.h"
+#include "BotanCompat.h"
 #include "CryptoFactory.h"
 #include "BotanCryptoFactory.h"
 #include "RSAParameters.h"
@@ -174,7 +175,7 @@ bool BotanRSA::signInit(PrivateKey* privateKey, const AsymMech::Type mechanism,
 			emsa = "EMSA3(MD5)";
 			break;
 		case AsymMech::RSA_SHA1_PKCS:
-			emsa = "EMSA3(SHA-160)";
+			emsa = "EMSA3(" BOTAN_COMPAT_SHA1 ")";
 			break;
 		case AsymMech::RSA_SHA224_PKCS:
 			emsa = "EMSA3(SHA-224)";
@@ -207,7 +208,7 @@ bool BotanRSA::signInit(PrivateKey* privateKey, const AsymMech::Type mechanism,
 				AsymmetricAlgorithm::signFinal(dummy);
 				return false;
 			}
-			request << "EMSA4(SHA-160,MGF1," << sLen << ")";
+			request << "EMSA4(" BOTAN_COMPAT_SHA1 ",MGF1," << sLen << ")";
 			emsa = request.str();
 			break;
 		case AsymMech::RSA_SHA224_PKCS_PSS:
@@ -291,7 +292,7 @@ bool BotanRSA::signInit(PrivateKey* privateKey, const AsymMech::Type mechanism,
 			emsa = request.str();
 			break;
 		case AsymMech::RSA_SSL:
-			emsa = "EMSA3(Parallel(MD5,SHA-160))";
+			emsa = "EMSA3(Parallel(MD5," BOTAN_COMPAT_SHA1 "))";
 			break;
 		default:
 			ERROR_MSG("Invalid mechanism supplied (%i)", mechanism);
@@ -510,7 +511,7 @@ bool BotanRSA::verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism,
 			emsa = "EMSA3(MD5)";
 			break;
 		case AsymMech::RSA_SHA1_PKCS:
-			emsa = "EMSA3(SHA-160)";
+			emsa = "EMSA3(" BOTAN_COMPAT_SHA1 ")";
 			break;
 		case AsymMech::RSA_SHA224_PKCS:
 			emsa = "EMSA3(SHA-224)";
@@ -543,7 +544,7 @@ bool BotanRSA::verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism,
 				AsymmetricAlgorithm::verifyFinal(dummy);
 				return false;
 			}
-			request << "EMSA4(SHA-160,MGF1," << sLen << ")";
+			request << "EMSA4(" BOTAN_COMPAT_SHA1 ",MGF1," << sLen << ")";
 			emsa = request.str();
 			break;
 		case AsymMech::RSA_SHA224_PKCS_PSS:
@@ -627,7 +628,7 @@ bool BotanRSA::verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism,
 			emsa = request.str();
 			break;
 		case AsymMech::RSA_SSL:
-			emsa = "EMSA3(Parallel(MD5,SHA-160))";
+			emsa = "EMSA3(Parallel(MD5," BOTAN_COMPAT_SHA1 "))";
 			break;
 		default:
 			ERROR_MSG("Invalid mechanism supplied (%i)", mechanism);
@@ -1113,7 +1114,7 @@ std::string BotanRSA::getCipherRawPss(size_t bitLength, size_t dataSize, const M
 	switch (rsaPssMecahnismParam->hashAlg)
 	{
 		case HashAlgo::SHA1:
-			hashStr = "SHA-160";
+			hashStr = BOTAN_COMPAT_SHA1;
 			allowedLen = 20;
 			break;
 		case HashAlgo::SHA224:
@@ -1194,7 +1195,7 @@ std::string BotanRSA::getCipherOaep(size_t bitLength, size_t dataSize, const Mec
 	switch (rsaOaepMecahnismParam->hashAlg)
 	{
 		case HashAlgo::SHA1:
-			hashStr = "SHA-160";
+			hashStr = BOTAN_COMPAT_SHA1;
 			hashLen = 20;
 			break;
 		case HashAlgo::SHA224:
@@ -1236,7 +1237,7 @@ std::string BotanRSA::getCipherOaep(size_t bitLength, size_t dataSize, const Mec
 	switch (rsaOaepMecahnismParam->mgfAlg)
 	{
 		case AsymRSAMGF::MGF1_SHA1:
-			mgfStr = "SHA-160";
+			mgfStr = BOTAN_COMPAT_SHA1;
 			break;
 		case AsymRSAMGF::MGF1_SHA224:
 			mgfStr = "SHA-224";

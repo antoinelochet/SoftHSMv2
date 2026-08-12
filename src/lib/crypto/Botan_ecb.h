@@ -29,6 +29,12 @@ class ECB_Mode : public Cipher_Mode
 
       size_t update_granularity() const override;
 
+#if BOTAN_VERSION_MAJOR >= 3
+      size_t ideal_granularity() const override;
+
+      bool has_keying_material() const override;
+#endif
+
       Key_Length_Specification key_spec() const override;
 
       size_t default_nonce_length() const override;
@@ -48,7 +54,11 @@ class ECB_Mode : public Cipher_Mode
 
    private:
       void start_msg(const byte nonce[], size_t nonce_len) override;
+#if BOTAN_VERSION_CODE >= BOTAN_VERSION_CODE_FOR(3,2,0)
+      void key_schedule(std::span<const uint8_t> key) override;
+#else
       void key_schedule(const byte key[], size_t length) override;
+#endif
 
       std::unique_ptr<BlockCipher> m_cipher;
       bool m_with_pkcs7_padding;
@@ -66,9 +76,15 @@ class ECB_Encryption final : public ECB_Mode
       ECB_Encryption(BlockCipher* cipher, bool with_pkcs7_padding) :
          ECB_Mode(cipher, with_pkcs7_padding) {}
 
+#if BOTAN_VERSION_MAJOR >= 3
+      size_t process_msg(uint8_t buf[], size_t size) override;
+
+      void finish_msg(secure_vector<uint8_t>& final_block, size_t offset = 0) override;
+#else
       size_t process(uint8_t buf[], size_t size) override;
 
       void finish(secure_vector<byte>& final_block, size_t offset = 0) override;
+#endif
 
       size_t output_length(size_t input_length) const override;
 
@@ -88,9 +104,15 @@ class ECB_Decryption final : public ECB_Mode
       ECB_Decryption(BlockCipher* cipher, bool with_pkcs7_padding) :
          ECB_Mode(cipher, with_pkcs7_padding) {}
 
+#if BOTAN_VERSION_MAJOR >= 3
+      size_t process_msg(uint8_t buf[], size_t size) override;
+
+      void finish_msg(secure_vector<uint8_t>& final_block, size_t offset = 0) override;
+#else
       size_t process(uint8_t buf[], size_t size) override;
 
       void finish(secure_vector<byte>& final_block, size_t offset = 0) override;
+#endif
 
       size_t output_length(size_t input_length) const override;
 

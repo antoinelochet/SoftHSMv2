@@ -32,10 +32,13 @@
 
 #include "config.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <botan/der_enc.h>
 #include <botan/ber_dec.h>
 #include <botan/asn1_obj.h>
+#if BOTAN_VERSION_MAJOR < 3
 #include <botan/asn1_str.h>
+#endif
 #include <botan/version.h>
 
 // Convert a Botan BigInt to a ByteString
@@ -82,7 +85,7 @@ Botan::BigInt BotanUtil::byteString2bigInt(const ByteString& byteString)
 // Convert a Botan EC group to a ByteString
 ByteString BotanUtil::ecGroup2ByteString(const Botan::EC_Group& ecGroup)
 {
-	std::vector<uint8_t> der = ecGroup.DER_encode(Botan::EC_DOMPAR_ENC_OID);
+	std::vector<uint8_t> der = ecGroup.DER_encode(BotanCompat::EC_DOMPAR_ENC_OID);
 	return ByteString(&der[0], der.size());
 }
 
@@ -102,14 +105,14 @@ ByteString BotanUtil::ecPoint2ByteString(const Botan::PointGFp& ecPoint)
 	try
 	{
 #if BOTAN_VERSION_CODE >= BOTAN_VERSION_CODE_FOR(2,5,0)
-		const std::vector<uint8_t> repr = ecPoint.encode(Botan::PointGFp::UNCOMPRESSED);
+		const std::vector<uint8_t> repr = ecPoint.encode(BotanCompat::EC_POINT_UNCOMPRESSED);
 #else
-		const Botan::secure_vector<uint8_t> repr = Botan::EC2OSP(ecPoint, Botan::PointGFp::UNCOMPRESSED);
+		const Botan::secure_vector<uint8_t> repr = Botan::EC2OSP(ecPoint, BotanCompat::EC_POINT_UNCOMPRESSED);
 #endif
 		Botan::secure_vector<uint8_t> der;
 
 		der = Botan::DER_Encoder()
-			.encode(repr, Botan::OCTET_STRING)
+			.encode(repr, BotanCompat::OCTET_STRING)
 			.get_contents();
 		point.resize(der.size());
 		memcpy(&point[0], &der[0], der.size());
@@ -126,7 +129,7 @@ Botan::PointGFp BotanUtil::byteString2ECPoint(const ByteString& byteString, cons
 {
 	std::vector<uint8_t> repr;
 	Botan::BER_Decoder(byteString.const_byte_str(), byteString.size())
-		.decode(repr, Botan::OCTET_STRING)
+		.decode(repr, BotanCompat::OCTET_STRING)
 		.verify_end();
 #if BOTAN_VERSION_CODE >= BOTAN_VERSION_CODE_FOR(2,5,0)
 	return ecGroup.OS2ECP(&repr[0], repr.size());
@@ -155,7 +158,7 @@ ByteString BotanUtil::oid2ByteString(const Botan::OID& oid)
 		return ByteString();
 	}
 
-	Botan::ASN1_String str = Botan::ASN1_String(name, Botan::PRINTABLE_STRING);
+	Botan::ASN1_String str = Botan::ASN1_String(name, BotanCompat::PRINTABLE_STRING);
 	const Botan::secure_vector<uint8_t> der = Botan::DER_Encoder().encode(str).get_contents();
 	return ByteString(&der[0], der.size());
 }
@@ -165,11 +168,11 @@ Botan::OID BotanUtil::byteString2Oid(const ByteString& byteString)
 {
 	Botan::BER_Object object;
 
-	Botan::BER_Decoder dec = Botan::BER_Decoder(byteString.const_byte_str(), byteString.size())
-		.get_next(object)
-		.verify_end();
+	// Botan 3 deletes the BER_Decoder copy constructor
+	Botan::BER_Decoder dec(byteString.const_byte_str(), byteString.size());
+	dec.get_next(object).verify_end();
 
-	if (object.is_a(Botan::PRINTABLE_STRING, Botan::ASN1_Tag(0)))
+	if (BotanCompat::isA(object, BotanCompat::PRINTABLE_STRING))
 	{
 		Botan::ASN1_String str;
 
@@ -183,7 +186,7 @@ Botan::OID BotanUtil::byteString2Oid(const ByteString& byteString)
 
 		/* fall through */
 	}
-	else if (object.is_a(Botan::OBJECT_ID, Botan::ASN1_Tag(0)))
+	else if (BotanCompat::isA(object, BotanCompat::OBJECT_ID))
 	{
 		Botan::OID oid;
 

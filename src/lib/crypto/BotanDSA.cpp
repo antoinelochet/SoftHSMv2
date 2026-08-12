@@ -34,6 +34,7 @@
 #include "log.h"
 #include "BotanDSA.h"
 #include "BotanRNG.h"
+#include "BotanCompat.h"
 #include "CryptoFactory.h"
 #include "BotanCryptoFactory.h"
 #include "DSAParameters.h"
@@ -156,7 +157,7 @@ bool BotanDSA::signInit(PrivateKey* privateKey, const AsymMech::Type mechanism,
 	switch (mechanism)
 	{
 		case AsymMech::DSA_SHA1:
-			emsa = "EMSA1(SHA-160)";
+			emsa = "EMSA1(" BOTAN_COMPAT_SHA1 ")";
 			break;
 		case AsymMech::DSA_SHA224:
 			emsa = "EMSA1(SHA-224)";
@@ -382,7 +383,7 @@ bool BotanDSA::verifyInit(PublicKey* publicKey, const AsymMech::Type mechanism,
 	switch (mechanism)
 	{
 		case AsymMech::DSA_SHA1:
-			emsa = "EMSA1(SHA-160)";
+			emsa = "EMSA1(" BOTAN_COMPAT_SHA1 ")";
 			break;
 		case AsymMech::DSA_SHA224:
 			emsa = "EMSA1(SHA-224)";

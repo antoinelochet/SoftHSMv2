@@ -45,11 +45,17 @@
 #include <botan/auto_rng.h>
 #include <botan/pkcs8.h>
 #include <botan/bigint.h>
+#include <botan/data_src.h>
 #include <botan/der_enc.h>
+#if BOTAN_VERSION_MAJOR >= 3
+#include <botan/pkix_types.h>
+#else
 #include <botan/oids.h>
-#include <botan/der_enc.h>
-#include <botan/x509cert.h>
 #include <botan/x509_dn.h>
+#endif
+#include <botan/x509cert.h>
+
+#include "BotanCompat.h"
 
 // Init Botan
 void crypto_init()
@@ -283,6 +289,18 @@ Botan::Private_Key* crypto_read_file(char* filePath, char* filePIN)
 
 	try
 	{
+#if BOTAN_VERSION_MAJOR >= 3
+		// Botan 3 dropped the file name based overloads
+		Botan::DataSource_Stream source{std::string(filePath)};
+		if (filePIN == NULL)
+		{
+			pkey = Botan::PKCS8::load_key(source).release();
+		}
+		else
+		{
+			pkey = Botan::PKCS8::load_key(source, std::string(filePIN)).release();
+		}
+#else
 		if (filePIN == NULL)
 		{
 			pkey = Botan::PKCS8::load_key(std::string(filePath), *rng);
@@ -291,6 +309,7 @@ Botan::Private_Key* crypto_read_file(char* filePath, char* filePIN)
 		{
 			pkey = Botan::PKCS8::load_key(std::string(filePath), *rng, std::string(filePIN));
 		}
+#endif
 	}
 	catch (std::exception& e)
 	{
@@ -560,11 +579,11 @@ dsa_key_material_t* crypto_malloc_dsa(Botan::DSA_PrivateKey* dsa)
 		return NULL;
 	}
 
-	keyMat->sizeP = dsa->group_p().bytes();
-	keyMat->sizeQ = dsa->group_q().bytes();
-	keyMat->sizeG = dsa->group_g().bytes();
-	keyMat->sizeX = dsa->get_x().bytes();
-	keyMat->sizeY = dsa->get_y().bytes();
+	keyMat->sizeP = BotanCompat::groupP(*dsa).bytes();
+	keyMat->sizeQ = BotanCompat::groupQ(*dsa).bytes();
+	keyMat->sizeG = BotanCompat::groupG(*dsa).bytes();
+	keyMat->sizeX = BotanCompat::getX(*dsa).bytes();
+	keyMat->sizeY = BotanCompat::getY(*dsa).bytes();
 
 	keyMat->bigP = (CK_VOID_PTR)malloc(keyMat->sizeP);
 	keyMat->bigQ = (CK_VOID_PTR)malloc(keyMat->sizeQ);
@@ -578,11 +597,11 @@ dsa_key_material_t* crypto_malloc_dsa(Botan::DSA_PrivateKey* dsa)
 		return NULL;
 	}
 
-	dsa->group_p().binary_encode((Botan::byte*)keyMat->bigP);
-	dsa->group_q().binary_encode((Botan::byte*)keyMat->bigQ);
-	dsa->group_g().binary_encode((Botan::byte*)keyMat->bigG);
-	dsa->get_x().binary_encode((Botan::byte*)keyMat->bigX);
-	dsa->get_y().binary_encode((Botan::byte*)keyMat->bigY);
+	BotanCompat::groupP(*dsa).binary_encode((Botan::byte*)keyMat->bigP);
+	BotanCompat::groupQ(*dsa).binary_encode((Botan::byte*)keyMat->bigQ);
+	BotanCompat::groupG(*dsa).binary_encode((Botan::byte*)keyMat->bigG);
+	BotanCompat::getX(*dsa).binary_encode((Botan::byte*)keyMat->bigX);
+	BotanCompat::getY(*dsa).binary_encode((Botan::byte*)keyMat->bigY);
 
 	return keyMat;
 }
@@ -692,20 +711,20 @@ ecdsa_key_material_t* crypto_malloc_ecdsa(Botan::ECDSA_PrivateKey* ecdsa)
 		return NULL;
 	}
 
-	std::vector<Botan::byte> derEC = ecdsa->domain().DER_encode(Botan::EC_DOMPAR_ENC_OID);
+	std::vector<Botan::byte> derEC = ecdsa->domain().DER_encode(BotanCompat::EC_DOMPAR_ENC_OID);
 	Botan::secure_vector<Botan::byte> derPoint;
 
 	try
 	{
 #if BOTAN_VERSION_CODE >= BOTAN_VERSION_CODE_FOR(2,5,0)
-		std::vector<uint8_t> repr = ecdsa->public_point().encode(Botan::PointGFp::UNCOMPRESSED);
+		std::vector<uint8_t> repr = ecdsa->public_point().encode(BotanCompat::EC_POINT_UNCOMPRESSED);
 #else
 		Botan::secure_vector<Botan::byte> repr = Botan::EC2OSP(ecdsa->public_point(),
-			Botan::PointGFp::UNCOMPRESSED);
+			BotanCompat::EC_POINT_UNCOMPRESSED);
 #endif
 
 		derPoint = Botan::DER_Encoder()
-			.encode(repr, Botan::OCTET_STRING)
+			.encode(repr, BotanCompat::OCTET_STRING)
 			.get_contents();
         }
 	catch (...)
@@ -844,8 +863,8 @@ eddsa_key_material_t* crypto_malloc_eddsa
 	}
 
 	Botan::OID oid;
-	if (x25519) oid = Botan::OIDS::lookup("Curve25519");
-	if (ed25519) oid = Botan::OIDS::lookup("Ed25519");
+	if (x25519) oid = BotanCompat::str2Oid("Curve25519");
+	if (ed25519) oid = BotanCompat::str2Oid("Ed25519");
 	if (oid.empty())
 	{
 		return NULL;
@@ -865,12 +884,21 @@ eddsa_key_material_t* crypto_malloc_eddsa
 	keyMat->bigA = (CK_VOID_PTR)malloc(keyMat->sizeA);
 
 	Botan::secure_vector<Botan::byte> priv;
+#if BOTAN_VERSION_MAJOR >= 3
+	if (x25519) priv = x25519->raw_private_key_bits();
+	if (ed25519)
+	{
+		priv = ed25519->raw_private_key_bits();
+		priv.resize(32);
+	}
+#else
 	if (x25519) priv = x25519->get_x();
 	if (ed25519)
 	{
 		priv = ed25519->get_private_key();
 		priv.resize(32);
 	}
+#endif
 	keyMat->sizeK = priv.size();
 	keyMat->bigK = (CK_VOID_PTR)malloc(keyMat->sizeK);
 

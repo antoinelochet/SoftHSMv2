@@ -80,7 +80,8 @@ void RSATests::testKeyGeneration()
 	// Key sizes to test
 	std::vector<size_t> keySizes;
 	keySizes.push_back(1024);
-#ifndef WITH_FIPS
+#if !defined(WITH_FIPS) && !defined(WITH_BOTAN)
+	// Newer Botan releases only generate RSA keys with a byte aligned modulus
 	keySizes.push_back(1025);
 #endif
 	keySizes.push_back(1280);

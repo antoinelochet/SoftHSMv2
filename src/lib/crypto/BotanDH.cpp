@@ -158,7 +158,7 @@ bool BotanDH::generateKeyPair(AsymmetricKeyPair** ppKeyPair, AsymmetricParameter
 	// Create an asymmetric key-pair object to return
 	BotanDHKeyPair* kp = new BotanDHKeyPair();
 
-	((BotanDHPublicKey*) kp->getPublicKey())->setFromBotan(dh);
+	((BotanDHPublicKey*) kp->getPublicKey())->setFromBotan(dh->impl);
 	((BotanDHPrivateKey*) kp->getPrivateKey())->setFromBotan(dh);
 
 	*ppKeyPair = kp;

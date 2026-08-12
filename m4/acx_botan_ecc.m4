@@ -13,11 +13,25 @@ AC_DEFUN([ACX_BOTAN_ECC],[
 		AC_RUN_IFELSE([
 			AC_LANG_SOURCE([[
 				#include <botan/ec_group.h>
-				#include <botan/oids.h>
 				#include <botan/version.h>
+				#if BOTAN_VERSION_MAJOR >= 3
+				#include <botan/asn1_obj.h>
+				#else
+				#include <botan/oids.h>
+				#endif
 				int main()
 				{
 					const std::string name("secp256r1");
+				#if BOTAN_VERSION_MAJOR >= 3
+					const Botan::OID oid(Botan::OID::from_string(name));
+					const Botan::EC_Group ecg(oid);
+					try {
+						const std::vector<uint8_t> der =
+						ecg.DER_encode(Botan::EC_Group_Encoding::NamedCurve);
+					} catch(...) {
+						return 1;
+					}
+				#else
 					const Botan::OID oid(Botan::OIDS::lookup(name));
 					const Botan::EC_Group ecg(oid);
 					try {
@@ -26,6 +40,7 @@ AC_DEFUN([ACX_BOTAN_ECC],[
 					} catch(...) {
 						return 1;
 					}
+				#endif
 					return 0;
 				}
 			]])

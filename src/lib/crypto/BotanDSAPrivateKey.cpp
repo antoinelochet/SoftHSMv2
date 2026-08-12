@@ -36,11 +36,14 @@
 #include "BotanCryptoFactory.h"
 #include "BotanRNG.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <string.h>
 #include <botan/pkcs8.h>
 #include <botan/ber_dec.h>
 #include <botan/der_enc.h>
+#if BOTAN_VERSION_MAJOR < 3
 #include <botan/oids.h>
+#endif
 #include <botan/version.h>
 
 // Constructors
@@ -68,13 +71,13 @@ BotanDSAPrivateKey::~BotanDSAPrivateKey()
 // Set from Botan representation
 void BotanDSAPrivateKey::setFromBotan(const Botan::DSA_PrivateKey* inDSA)
 {
-	ByteString inP = BotanUtil::bigInt2ByteString(inDSA->group_p());
+	ByteString inP = BotanUtil::bigInt2ByteString(BotanCompat::groupP(*inDSA));
 	setP(inP);
-	ByteString inQ = BotanUtil::bigInt2ByteString(inDSA->group_q());
+	ByteString inQ = BotanUtil::bigInt2ByteString(BotanCompat::groupQ(*inDSA));
 	setQ(inQ);
-	ByteString inG = BotanUtil::bigInt2ByteString(inDSA->group_g());
+	ByteString inG = BotanUtil::bigInt2ByteString(BotanCompat::groupG(*inDSA));
 	setG(inG);
-	ByteString inX = BotanUtil::bigInt2ByteString(inDSA->get_x());
+	ByteString inX = BotanUtil::bigInt2ByteString(BotanCompat::getX(*inDSA));
 	setX(inX);
 }
 
@@ -155,15 +158,15 @@ bool BotanDSAPrivateKey::PKCS8Decode(const ByteString& ber)
 	{
 
 		Botan::BER_Decoder(source)
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 			.decode_and_check<size_t>(0, "Unknown PKCS #8 version number")
 			.decode(alg_id)
-			.decode(keydata, Botan::OCTET_STRING)
+			.decode(keydata, BotanCompat::OCTET_STRING)
 			.discard_remaining()
 		.end_cons();
 		if (keydata.empty())
 			throw Botan::Decoding_Error("PKCS #8 private key decoding failed");
-		if (Botan::OIDS::lookup(alg_id.oid).compare("DSA"))
+		if (BotanCompat::oid2Str(BotanCompat::algIdOid(alg_id)).compare("DSA"))
 		{
 			ERROR_MSG("Decoded private key not DSA");
 
@@ -215,12 +218,19 @@ void BotanDSAPrivateKey::createBotanKey()
 
 		try
 		{
+#if BOTAN_VERSION_MAJOR >= 3
+			dsa = new Botan::DSA_PrivateKey(Botan::DL_Group(BotanUtil::byteString2bigInt(p),
+							BotanUtil::byteString2bigInt(q),
+							BotanUtil::byteString2bigInt(g)),
+							BotanUtil::byteString2bigInt(x));
+#else
 			BotanRNG* rng = (BotanRNG*)BotanCryptoFactory::i()->getRNG();
 			dsa = new Botan::DSA_PrivateKey(*rng->getRNG(),
 							Botan::DL_Group(BotanUtil::byteString2bigInt(p),
 							BotanUtil::byteString2bigInt(q),
 							BotanUtil::byteString2bigInt(g)),
 							BotanUtil::byteString2bigInt(x));
+#endif
 		}
 		catch (...)
 		{

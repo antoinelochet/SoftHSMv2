@@ -167,15 +167,26 @@ if(WITH_CRYPTO_BACKEND STREQUAL "botan")
     set(CRYPTO_LIBS ${BOTAN_LIBRARY})
     message(STATUS "Botan: Includes: ${CRYPTO_INCLUDES}")
     message(STATUS "Botan: Libs: ${CRYPTO_LIBS}")
+    message(STATUS "Botan: Major version: ${BOTAN_VERSION_MAJOR}")
 
-    # CXX11 flag is not added to try_run, so set it locally.
-    CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-    CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+    # The C++ standard flag is not added to try_run, so set it locally.
     set(TMP_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-    if(COMPILER_SUPPORTS_CXX11)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-    elseif(COMPILER_SUPPORTS_CXX0X)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+    if(BOTAN_VERSION_MAJOR GREATER_EQUAL 3)
+        # Botan 3 headers use C++20 constructs, so consumers need C++20 too
+        CHECK_CXX_COMPILER_FLAG("-std=c++20" COMPILER_SUPPORTS_CXX20)
+        if(NOT COMPILER_SUPPORTS_CXX20)
+            message(FATAL_ERROR "Botan 3 requires a compiler supporting C++20")
+        endif()
+        set(CMAKE_CXX_STANDARD 20)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20")
+    else()
+        CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
+        CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+        if(COMPILER_SUPPORTS_CXX11)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+        elseif(COMPILER_SUPPORTS_CXX0X)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+        endif()
     endif()
 
     # acx_botan_ecc.m4

@@ -36,11 +36,15 @@
 #include "BotanCryptoFactory.h"
 #include "BotanRNG.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <string.h>
 #include <botan/pkcs8.h>
 #include <botan/ber_dec.h>
 #include <botan/der_enc.h>
+#include <botan/dl_group.h>
+#if BOTAN_VERSION_MAJOR < 3
 #include <botan/oids.h>
+#endif
 #include <botan/version.h>
 
 std::vector<uint8_t> BotanDH_PrivateKey::public_value() const
@@ -48,6 +52,42 @@ std::vector<uint8_t> BotanDH_PrivateKey::public_value() const
 	return impl->public_value();
 }
 
+#if BOTAN_VERSION_MAJOR >= 3
+namespace
+{
+	// Botan 3 dropped get_domain(), rebuild the group from the key fields
+	Botan::DL_Group dhGroup(const Botan::DH_PrivateKey& key)
+	{
+		return Botan::DL_Group(BotanCompat::groupP(key), BotanCompat::groupG(key));
+	}
+}
+
+// SoftHSM stores DH keys with PKCS#3 domain parameters instead of X9.42 ones
+BotanDH_PrivateKey::BotanDH_PrivateKey(
+			const Botan::AlgorithmIdentifier& alg_id,
+			const Botan::secure_vector<uint8_t>& key_bits,
+			Botan::RandomNumberGenerator& /*rng*/)
+{
+	const Botan::DL_Group grp(alg_id.parameters(), BotanCompat::PKCS3_DH_PARAMETERS);
+	Botan::BigInt x;
+	Botan::BER_Decoder(key_bits.data(), key_bits.size()).decode(x);
+	impl = new Botan::DH_PrivateKey(grp, x);
+}
+
+BotanDH_PrivateKey::BotanDH_PrivateKey(Botan::RandomNumberGenerator& rng,
+				       const Botan::DL_Group& grp,
+				       const Botan::BigInt& x_arg)
+{
+	if (x_arg.is_zero())
+	{
+		impl = new Botan::DH_PrivateKey(rng, grp);
+	}
+	else
+	{
+		impl = new Botan::DH_PrivateKey(grp, x_arg);
+	}
+}
+#else
 // Redefine of DH_PrivateKey constructor with the correct format
 BotanDH_PrivateKey::BotanDH_PrivateKey(
 			const Botan::AlgorithmIdentifier& alg_id,
@@ -67,6 +107,7 @@ BotanDH_PrivateKey::BotanDH_PrivateKey(Botan::RandomNumberGenerator& rng,
 	m_x = x_arg;
 	m_y = impl->get_y();
 }
+#endif
 
 BotanDH_PrivateKey::~BotanDH_PrivateKey()
 {
@@ -98,11 +139,11 @@ BotanDHPrivateKey::~BotanDHPrivateKey()
 // Set from Botan representation
 void BotanDHPrivateKey::setFromBotan(const BotanDH_PrivateKey* inDH)
 {
-	ByteString inP = BotanUtil::bigInt2ByteString(inDH->impl->group_p());
+	ByteString inP = BotanUtil::bigInt2ByteString(BotanCompat::groupP(*inDH->impl));
 	setP(inP);
-	ByteString inG = BotanUtil::bigInt2ByteString(inDH->impl->group_g());
+	ByteString inG = BotanUtil::bigInt2ByteString(BotanCompat::groupG(*inDH->impl));
 	setG(inG);
-	ByteString inX = BotanUtil::bigInt2ByteString(inDH->impl->get_x());
+	ByteString inX = BotanUtil::bigInt2ByteString(BotanCompat::getX(*inDH->impl));
 	setX(inX);
 }
 
@@ -155,14 +196,19 @@ ByteString BotanDHPrivateKey::PKCS8Encode()
 	if (dh == NULL) return der;
 	// Force PKCS3_DH_PARAMETERS for p, g and no q.
 	const size_t PKCS8_VERSION = 0;
-	const std::vector<uint8_t> parameters = dh->impl->get_domain().DER_encode(Botan::DL_Group::PKCS3_DH_PARAMETERS);
+#if BOTAN_VERSION_MAJOR >= 3
+	const std::vector<uint8_t> parameters = dhGroup(*dh->impl).DER_encode(BotanCompat::PKCS3_DH_PARAMETERS);
+	const Botan::AlgorithmIdentifier alg_id(dh->impl->object_identifier(), parameters);
+#else
+	const std::vector<uint8_t> parameters = dh->impl->get_domain().DER_encode(BotanCompat::PKCS3_DH_PARAMETERS);
 	const Botan::AlgorithmIdentifier alg_id(dh->impl->get_oid(), parameters);
+#endif
 	const Botan::secure_vector<uint8_t> ber =
 		Botan::DER_Encoder()
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 		    .encode(PKCS8_VERSION)
 		    .encode(alg_id)
-		    .encode(dh->impl->private_key_bits(), Botan::OCTET_STRING)
+		    .encode(dh->impl->private_key_bits(), BotanCompat::OCTET_STRING)
 		.end_cons()
 	    .get_contents();
 	der.resize(ber.size());
@@ -181,15 +227,15 @@ bool BotanDHPrivateKey::PKCS8Decode(const ByteString& ber)
 	try
 	{
 		Botan::BER_Decoder(source)
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 			.decode_and_check<size_t>(0, "Unknown PKCS #8 version number")
 			.decode(alg_id)
-			.decode(keydata, Botan::OCTET_STRING)
+			.decode(keydata, BotanCompat::OCTET_STRING)
 			.discard_remaining()
 		.end_cons();
 		if (keydata.empty())
 			throw Botan::Decoding_Error("PKCS #8 private key decoding failed");
-		if (Botan::OIDS::lookup(alg_id.oid).compare("DH"))
+		if (BotanCompat::oid2Str(BotanCompat::algIdOid(alg_id)).compare("DH"))
 		{
 			ERROR_MSG("Decoded private key not DH");
 

@@ -11,29 +11,30 @@ AC_DEFUN([ACX_BOTAN],[
 		])
 
 	if test -n "${PKG_CONFIG}" && test -z "${WITH_BOTAN}"; then
-		PKG_CHECK_MODULES([BOTAN], [botan-2 >= $1.$2.$3], [
-			BOTAN_VERSION_MAJOR=2
+		PKG_CHECK_MODULES([BOTAN], [botan-3], [
+			BOTAN_VERSION_MAJOR=3
 			BOTAN_VERSION_MINOR=0
 		],[
-			AC_MSG_ERROR([Cannot find Botan])
+			PKG_CHECK_MODULES([BOTAN], [botan-2 >= $1.$2.$3], [
+				BOTAN_VERSION_MAJOR=2
+				BOTAN_VERSION_MINOR=0
+			],[
+				AC_MSG_ERROR([Cannot find Botan])
+			])
 		])
 	else
-		BOTAN_VERSION_MAJOR=2
-		BOTAN_VERSION_MINOR=0
-		if test -f "$BOTAN_PATH/include/botan-2/botan/version.h"; then
+		if test -f "$BOTAN_PATH/include/botan-3/botan/version.h"; then
+			BOTAN_VERSION_MAJOR=3
+			BOTAN_VERSION_MINOR=0
+		elif test -f "$BOTAN_PATH/include/botan-2/botan/version.h"; then
 			BOTAN_VERSION_MAJOR=2
 			BOTAN_VERSION_MINOR=0
 		else
 			AC_MSG_ERROR([Cannot find Botan includes])
 		fi
 
-		if test "x${BOTAN_VERSION_MAJOR}" = "x2"; then
-			BOTAN_CFLAGS="-I$BOTAN_PATH/include/botan-2"
-			BOTAN_LIBS="-L$BOTAN_PATH/lib -lbotan-2"
-		else
-			BOTAN_CFLAGS="-I$BOTAN_PATH/include/botan-1.$BOTAN_VERSION_MINOR"
-			BOTAN_LIBS="-L$BOTAN_PATH/lib -lbotan-1.$BOTAN_VERSION_MINOR"
-		fi
+		BOTAN_CFLAGS="-I$BOTAN_PATH/include/botan-${BOTAN_VERSION_MAJOR}"
+		BOTAN_LIBS="-L$BOTAN_PATH/lib -lbotan-${BOTAN_VERSION_MAJOR}"
 
 		AC_SUBST(BOTAN_CFLAGS)
 		AC_SUBST(BOTAN_LIBS)
@@ -45,7 +46,26 @@ AC_DEFUN([ACX_BOTAN],[
 	AC_MSG_CHECKING(what are the Botan libs)
 	AC_MSG_RESULT($BOTAN_LIBS)
 
-	if test "x${BOTAN_VERSION_MAJOR}" != "x1" -o "x${BOTAN_VERSION_MINOR}" != "x10"; then
+	dnl Botan 3 public headers use C++20 constructs (concepts, std::span), so
+	dnl anything including them must also be built as C++20.
+	if test "x${BOTAN_VERSION_MAJOR}" = "x3"; then
+		CXX=`echo "$CXX" | sed -e 's/ -std=c++11//g'`
+		CXXFLAGS=`echo "$CXXFLAGS" | sed -e 's/ -std=c++11//g'`
+
+		dnl The feature probe trips over its own warnings under -Werror
+		acx_botan_saved_CXXFLAGS="$CXXFLAGS"
+		CXXFLAGS=""
+		for acx_botan_flag in $acx_botan_saved_CXXFLAGS; do
+			case $acx_botan_flag in
+				-Werror) ;;
+				*) CXXFLAGS="$CXXFLAGS $acx_botan_flag" ;;
+			esac
+		done
+
+		AX_CXX_COMPILE_STDCXX([20],[noext],[mandatory])
+
+		CXXFLAGS="$acx_botan_saved_CXXFLAGS"
+	else
 		AX_CXX_COMPILE_STDCXX_11([noext],[mandatory])
 	fi
 

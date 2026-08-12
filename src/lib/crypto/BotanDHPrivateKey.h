@@ -35,9 +35,33 @@
 
 #include "config.h"
 #include "DHPrivateKey.h"
+#include <botan/bigint.h>
 #include <botan/dh.h>
+#include <botan/dl_group.h>
 #include <botan/version.h>
 
+#if BOTAN_VERSION_MAJOR >= 3
+// Botan 3 no longer exposes DL_Scheme_PrivateKey, so the PKCS#3 flavour of the
+// PKCS#8 encoding is handled by this wrapper instead of by deriving from it.
+class BotanDH_PrivateKey
+{
+public:
+	std::vector<uint8_t> public_value() const;
+
+	// Constructors
+	BotanDH_PrivateKey(const Botan::AlgorithmIdentifier& alg_id,
+			   const Botan::secure_vector<uint8_t>& key_bits,
+			   Botan::RandomNumberGenerator& rng);
+
+	BotanDH_PrivateKey(Botan::RandomNumberGenerator& rng,
+			   const Botan::DL_Group& grp,
+			   const Botan::BigInt& x = Botan::BigInt::zero());
+
+	~BotanDH_PrivateKey();
+
+	Botan::DH_PrivateKey* impl;
+};
+#else
 // Derived from the DH_PrivateKey class
 class BotanDH_PrivateKey : public Botan::DH_PublicKey,
 			   public virtual Botan::DL_Scheme_PrivateKey
@@ -58,6 +82,7 @@ public:
 
 	Botan::DH_PrivateKey* impl;
 };
+#endif
 
 class BotanDHPrivateKey : public DHPrivateKey
 {

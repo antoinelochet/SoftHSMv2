@@ -35,11 +35,14 @@
 #include "config.h"
 #include "BotanSymmetricAlgorithm.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include "salloc.h"
 #include <iostream>
 
 #include <botan/symkey.h>
+#if BOTAN_VERSION_MAJOR < 3
 #include <botan/parsing.h>
+#endif
 #include <botan/version.h>
 #include <botan/filters.h>
 #include <botan/aead.h>
@@ -190,7 +193,11 @@ bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode
 		}
 		else if (mode == SymMode::GCM)
 		{
-			Botan::AEAD_Mode* aead = Botan::get_aead(cipherName, Botan::ENCRYPTION);
+#if BOTAN_VERSION_MAJOR >= 3
+			Botan::AEAD_Mode* aead = Botan::AEAD_Mode::create_or_throw(cipherName, BotanCompat::ENCRYPTION).release();
+#else
+			Botan::AEAD_Mode* aead = Botan::get_aead(cipherName, BotanCompat::ENCRYPTION);
+#endif
 			aead->set_key(botanKey);
 			aead->set_associated_data(aad.const_byte_str(), aad.size());
 
@@ -202,7 +209,7 @@ bool BotanSymmetricAlgorithm::encryptInit(const SymmetricKey* key, const SymMode
 		else
 		{
 			Botan::InitializationVector botanIV = Botan::InitializationVector(IV.const_byte_str(), IV.size());
-			cryption = new Botan::Pipe(Botan::get_cipher(cipherName, botanKey, botanIV, Botan::ENCRYPTION));
+			cryption = new Botan::Pipe(Botan::get_cipher(cipherName, botanKey, botanIV, BotanCompat::ENCRYPTION));
 		}
 		cryption->start_msg();
 	}
@@ -425,7 +432,11 @@ bool BotanSymmetricAlgorithm::decryptInit(const SymmetricKey* key, const SymMode
 		}
 		else if (mode == SymMode::GCM)
 		{
-			Botan::AEAD_Mode* aead = Botan::get_aead(cipherName, Botan::DECRYPTION);
+#if BOTAN_VERSION_MAJOR >= 3
+			Botan::AEAD_Mode* aead = Botan::AEAD_Mode::create_or_throw(cipherName, BotanCompat::DECRYPTION).release();
+#else
+			Botan::AEAD_Mode* aead = Botan::get_aead(cipherName, BotanCompat::DECRYPTION);
+#endif
 			aead->set_key(botanKey);
 			aead->set_associated_data(aad.const_byte_str(), aad.size());
 
@@ -437,7 +448,7 @@ bool BotanSymmetricAlgorithm::decryptInit(const SymmetricKey* key, const SymMode
 		else
 		{
 			Botan::InitializationVector botanIV = Botan::InitializationVector(IV.const_byte_str(), IV.size());
-			cryption = new Botan::Pipe(Botan::get_cipher(cipherName, botanKey, botanIV, Botan::DECRYPTION));
+			cryption = new Botan::Pipe(Botan::get_cipher(cipherName, botanKey, botanIV, BotanCompat::DECRYPTION));
 		}
 		cryption->start_msg();
 	}

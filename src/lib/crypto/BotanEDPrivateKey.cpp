@@ -37,12 +37,17 @@
 #include "BotanCryptoFactory.h"
 #include "BotanRNG.h"
 #include "BotanUtil.h"
+#include "BotanCompat.h"
 #include <string.h>
 #include <botan/pkcs8.h>
 #include <botan/ber_dec.h>
 #include <botan/der_enc.h>
+#if BOTAN_VERSION_MAJOR >= 3
+#include <botan/asn1_obj.h>
+#else
 #include <botan/asn1_oid.h>
 #include <botan/oids.h>
+#endif
 #include <botan/version.h>
 #include <botan/curve25519.h>
 #include <botan/ed25519.h>
@@ -168,19 +173,19 @@ bool BotanEDPrivateKey::PKCS8Decode(const ByteString& ber)
 	try
 	{
 		Botan::BER_Decoder(source)
-		.start_cons(Botan::SEQUENCE)
+		.start_cons(BotanCompat::SEQUENCE, BotanCompat::UNIVERSAL)
 			.decode_and_check<size_t>(0, "Unknown PKCS #8 version number")
 			.decode(alg_id)
-			.decode(keydata, Botan::OCTET_STRING)
+			.decode(keydata, BotanCompat::OCTET_STRING)
 			.discard_remaining()
 		.end_cons();
 		if (keydata.empty())
 			throw Botan::Decoding_Error("PKCS #8 private key decoding failed");
-		if (alg_id.oid == x25519_oid)
+		if (BotanCompat::algIdOid(alg_id) == x25519_oid)
 		{
 		  key = new Botan::Curve25519_PrivateKey(alg_id, keydata);
 		}
-		else if (alg_id.oid == ed25519_oid)
+		else if (BotanCompat::algIdOid(alg_id) == ed25519_oid)
 		{
 		  key = new Botan::Ed25519_PrivateKey(alg_id, keydata);
 		}
