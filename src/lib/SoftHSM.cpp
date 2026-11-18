@@ -1873,7 +1873,7 @@ CK_RV SoftHSM::C_CopyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject
 	if (token == NULL_PTR) return CKR_GENERAL_ERROR;
 
 	// Check the object handle.
-	OSObject *object = (OSObject *)handleManager->getObject(hObject);
+	auto object = handleManager->getObject(hObject);
 	if (object == NULL_PTR || !object->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL wasOnToken = object->getBooleanValue(CKA_TOKEN, false);
@@ -2049,7 +2049,7 @@ CK_RV SoftHSM::C_DestroyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObj
 	if (token == NULL_PTR) return CKR_GENERAL_ERROR;
 
 	// Check the object handle.
-	OSObject *object = (OSObject *)handleManager->getObject(hObject);
+	auto object = handleManager->getObject(hObject);
 	if (object == NULL_PTR || !object->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = object->getBooleanValue(CKA_TOKEN, false);
@@ -2097,7 +2097,7 @@ CK_RV SoftHSM::C_GetObjectSize(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObj
 	if (token == NULL_PTR) return CKR_GENERAL_ERROR;
 
 	// Check the object handle.
-	OSObject *object = (OSObject *)handleManager->getObject(hObject);
+	auto object = handleManager->getObject(hObject);
 	if (object == NULL_PTR || !object->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	*pulSize = CK_UNAVAILABLE_INFORMATION;
@@ -2121,7 +2121,7 @@ CK_RV SoftHSM::C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE 
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the object handle.
-	OSObject *object = (OSObject *)handleManager->getObject(hObject);
+	auto object = handleManager->getObject(hObject);
 	if (object == NULL_PTR || !object->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = object->getBooleanValue(CKA_TOKEN, false);
@@ -2168,7 +2168,7 @@ CK_RV SoftHSM::C_SetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE 
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the object handle.
-	OSObject *object = (OSObject *)handleManager->getObject(hObject);
+	auto object = handleManager->getObject(hObject);
 	if (object == NULL_PTR || !object->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = object->getBooleanValue(CKA_TOKEN, false);
@@ -2457,7 +2457,7 @@ CK_RV SoftHSM::SymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -2718,7 +2718,7 @@ CK_RV SoftHSM::AsymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -3225,7 +3225,7 @@ CK_RV SoftHSM::SymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -3487,7 +3487,7 @@ CK_RV SoftHSM::AsymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -4160,7 +4160,7 @@ CK_RV SoftHSM::C_DigestKey(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject)
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hObject);
+	auto key = handleManager->getObject(hObject);
 	if (key == NULL_PTR || !key->isValid()) return CKR_KEY_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -4317,7 +4317,7 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -4496,7 +4496,7 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -5670,7 +5670,7 @@ CK_RV SoftHSM::MacVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -5849,7 +5849,7 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -7695,7 +7695,7 @@ CK_RV SoftHSM::WrapMechRsaAesKw
 		// Remove secret that may have been created already when the function fails.
 		if (hEmphKey != CK_INVALID_HANDLE)
 		{
-		    OSObject *emphKey = (OSObject *)handleManager->getObject(hEmphKey);
+		    auto emphKey = handleManager->getObject(hEmphKey);
 		    handleManager->destroyObject(hEmphKey);
 		    if(emphKey) emphKey->destroyObject();
 		    hEmphKey = CK_INVALID_HANDLE;
@@ -7703,7 +7703,7 @@ CK_RV SoftHSM::WrapMechRsaAesKw
 		return rv;
 	}
 
-	OSObject *emphKey = (OSObject *)handleManager->getObject(hEmphKey);
+	auto emphKey = handleManager->getObject(hEmphKey);
 	if (emphKey == NULL_PTR || !emphKey->isValid())
 	{
 		rv = CKR_FUNCTION_FAILED;
@@ -7816,7 +7816,7 @@ CK_RV SoftHSM::C_WrapKey
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the wrapping key handle.
-	OSObject *wrapKey = (OSObject *)handleManager->getObject(hWrappingKey);
+	auto wrapKey = handleManager->getObject(hWrappingKey);
 	if (wrapKey == NULL_PTR || !wrapKey->isValid()) return CKR_WRAPPING_KEY_HANDLE_INVALID;
 
 	CK_BBOOL isWrapKeyOnToken = wrapKey->getBooleanValue(CKA_TOKEN, false);
@@ -7860,7 +7860,7 @@ CK_RV SoftHSM::C_WrapKey
 		return CKR_MECHANISM_INVALID;
 
 	// Check the to be wrapped key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hKey);
+	auto key = handleManager->getObject(hKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_KEY_HANDLE_INVALID;
 
 	CK_BBOOL isKeyOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -8357,7 +8357,7 @@ CK_RV SoftHSM::UnwrapMechRsaAesKw
 		// Remove secret that may have been created already when the function fails.
 		if (hEmphKey != CK_INVALID_HANDLE)
 		{
-			OSObject *emphKey = (OSObject *)handleManager->getObject(hEmphKey);
+			auto emphKey = handleManager->getObject(hEmphKey);
 			handleManager->destroyObject(hEmphKey);
 			if(emphKey) emphKey->destroyObject();
 			hEmphKey = CK_INVALID_HANDLE;
@@ -8367,7 +8367,7 @@ CK_RV SoftHSM::UnwrapMechRsaAesKw
 	}
 
 	// Store the attributes of emphkey
-	OSObject *emphKey = (OSObject *)handleManager->getObject(hEmphKey);
+	auto emphKey = handleManager->getObject(hEmphKey);
 	if (emphKey == NULL_PTR || !emphKey->isValid())
 	{
 		rv = CKR_FUNCTION_FAILED;
@@ -8524,7 +8524,7 @@ CK_RV SoftHSM::C_UnwrapKey
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the unwrapping key handle.
-	OSObject *unwrapKey = (OSObject *)handleManager->getObject(hUnwrappingKey);
+	auto unwrapKey = handleManager->getObject(hUnwrappingKey);
 	if (unwrapKey == NULL_PTR || !unwrapKey->isValid()) return CKR_UNWRAPPING_KEY_HANDLE_INVALID;
 
 	CK_BBOOL isUnwrapKeyOnToken = unwrapKey->getBooleanValue(CKA_TOKEN, false);
@@ -8700,7 +8700,7 @@ CK_RV SoftHSM::C_UnwrapKey
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*hKey);
+		auto osobject = handleManager->getObject(*hKey);
 		if (osobject == NULL_PTR || !osobject->isValid())
         {
 			rv = CKR_FUNCTION_FAILED;
@@ -8802,7 +8802,7 @@ CK_RV SoftHSM::C_UnwrapKey
 	{
 		if (*hKey != CK_INVALID_HANDLE)
 		{
-			OSObject* obj = (OSObject*)handleManager->getObject(*hKey);
+			auto obj = handleManager->getObject(*hKey);
 			handleManager->destroyObject(*hKey);
 			if (obj) obj->destroyObject();
 			*hKey = CK_INVALID_HANDLE;
@@ -8864,7 +8864,7 @@ CK_RV SoftHSM::C_DeriveKey
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the key handle.
-	OSObject *key = (OSObject *)handleManager->getObject(hBaseKey);
+	auto key = handleManager->getObject(hBaseKey);
 	if (key == NULL_PTR || !key->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
 	CK_BBOOL isKeyOnToken = key->getBooleanValue(CKA_TOKEN, false);
@@ -9126,7 +9126,7 @@ CK_RV SoftHSM::C_EncapsulateKey
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the wrapping key handle.
-	OSObject *encapsulationKey = (OSObject *)handleManager->getObject(hPublicKey);
+	auto encapsulationKey = handleManager->getObject(hPublicKey);
 	if (encapsulationKey == NULL_PTR || !encapsulationKey->isValid()) return CKR_KEY_HANDLE_INVALID;
 
 	CK_BBOOL isEncapsulationKeyOnToken = encapsulationKey->getBooleanValue(CKA_TOKEN, false);
@@ -9259,7 +9259,7 @@ CK_RV SoftHSM::C_EncapsulateKey
 		// Store the attributes that are being supplied
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+			auto osobject = handleManager->getObject(*phKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -9389,7 +9389,7 @@ CK_RV SoftHSM::C_EncapsulateKey
 		{
 			if (*phKey != CK_INVALID_HANDLE)
 			{
-				OSObject* ossecret = (OSObject*)handleManager->getObject(*phKey);
+				auto ossecret = handleManager->getObject(*phKey);
 				handleManager->destroyObject(*phKey);
 				if (ossecret) ossecret->destroyObject();
 				*phKey = CK_INVALID_HANDLE;
@@ -9451,7 +9451,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 	if (token == NULL) return CKR_GENERAL_ERROR;
 
 	// Check the wrapping key handle.
-	OSObject *decapsulationKey = (OSObject *)handleManager->getObject(hPrivateKey);
+	auto decapsulationKey = handleManager->getObject(hPrivateKey);
 	if (decapsulationKey == NULL_PTR || !decapsulationKey->isValid()) return CKR_KEY_HANDLE_INVALID;
 
 	CK_BBOOL isDecapsulationKeyOnToken = decapsulationKey->getBooleanValue(CKA_TOKEN, false);
@@ -9580,7 +9580,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 		// Store the attributes that are being supplied
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+			auto osobject = handleManager->getObject(*phKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -9702,7 +9702,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 		{
 			if (*phKey != CK_INVALID_HANDLE)
 			{
-				OSObject* ossecret = (OSObject*)handleManager->getObject(*phKey);
+				auto ossecret = handleManager->getObject(*phKey);
 				handleManager->destroyObject(*phKey);
 				if (ossecret) ossecret->destroyObject();
 				*phKey = CK_INVALID_HANDLE;
@@ -9838,7 +9838,7 @@ CK_RV SoftHSM::generateGeneric
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -9892,7 +9892,7 @@ CK_RV SoftHSM::generateGeneric
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* oskey = (OSObject*)handleManager->getObject(*phKey);
+			auto oskey = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (oskey) oskey->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -10028,7 +10028,7 @@ CK_RV SoftHSM::generateAES
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid())
         {
 			rv = CKR_FUNCTION_FAILED;
@@ -10085,7 +10085,7 @@ CK_RV SoftHSM::generateAES
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* oskey = (OSObject*)handleManager->getObject(*phKey);
+			auto oskey = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (oskey) oskey->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -10198,7 +10198,7 @@ CK_RV SoftHSM::generateDES
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -10252,7 +10252,7 @@ CK_RV SoftHSM::generateDES
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* oskey = (OSObject*)handleManager->getObject(*phKey);
+			auto oskey = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (oskey) oskey->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -10365,7 +10365,7 @@ CK_RV SoftHSM::generateDES2
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -10419,7 +10419,7 @@ CK_RV SoftHSM::generateDES2
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* oskey = (OSObject*)handleManager->getObject(*phKey);
+			auto oskey = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (oskey) oskey->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -10532,7 +10532,7 @@ CK_RV SoftHSM::generateDES3
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -10586,7 +10586,7 @@ CK_RV SoftHSM::generateDES3
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* oskey = (OSObject*)handleManager->getObject(*phKey);
+			auto oskey = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (oskey) oskey->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -10713,7 +10713,7 @@ CK_RV SoftHSM::generateRSA
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -10787,7 +10787,7 @@ CK_RV SoftHSM::generateRSA
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -10865,7 +10865,7 @@ CK_RV SoftHSM::generateRSA
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -10873,7 +10873,7 @@ CK_RV SoftHSM::generateRSA
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -10997,7 +10997,7 @@ CK_RV SoftHSM::generateDSA
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -11067,7 +11067,7 @@ CK_RV SoftHSM::generateDSA
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -11129,7 +11129,7 @@ CK_RV SoftHSM::generateDSA
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -11137,7 +11137,7 @@ CK_RV SoftHSM::generateDSA
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -11260,7 +11260,7 @@ CK_RV SoftHSM::generateDSAParameters
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -11311,7 +11311,7 @@ CK_RV SoftHSM::generateDSAParameters
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* osparams = (OSObject*)handleManager->getObject(*phKey);
+			auto osparams = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (osparams) osparams->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -11425,7 +11425,7 @@ CK_RV SoftHSM::generateEC
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -11495,7 +11495,7 @@ CK_RV SoftHSM::generateEC
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -11549,7 +11549,7 @@ CK_RV SoftHSM::generateEC
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -11557,7 +11557,7 @@ CK_RV SoftHSM::generateEC
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -11671,7 +11671,7 @@ CK_RV SoftHSM::generateED
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -11741,7 +11741,7 @@ CK_RV SoftHSM::generateED
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -11795,7 +11795,7 @@ CK_RV SoftHSM::generateED
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -11803,7 +11803,7 @@ CK_RV SoftHSM::generateED
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -11931,7 +11931,7 @@ CK_RV SoftHSM::generateMLDSA
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12002,7 +12002,7 @@ CK_RV SoftHSM::generateMLDSA
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12058,7 +12058,7 @@ CK_RV SoftHSM::generateMLDSA
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -12066,7 +12066,7 @@ CK_RV SoftHSM::generateMLDSA
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -12195,7 +12195,7 @@ CK_RV SoftHSM::generateMLKEM
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12267,7 +12267,7 @@ CK_RV SoftHSM::generateMLKEM
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12323,7 +12323,7 @@ CK_RV SoftHSM::generateMLKEM
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -12331,7 +12331,7 @@ CK_RV SoftHSM::generateMLKEM
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -12466,7 +12466,7 @@ CK_RV SoftHSM::generateDH
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12536,7 +12536,7 @@ CK_RV SoftHSM::generateDH
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12599,7 +12599,7 @@ CK_RV SoftHSM::generateDH
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -12607,7 +12607,7 @@ CK_RV SoftHSM::generateDH
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -12714,7 +12714,7 @@ CK_RV SoftHSM::generateDHParameters
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -12761,7 +12761,7 @@ CK_RV SoftHSM::generateDHParameters
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* osparams = (OSObject*)handleManager->getObject(*phKey);
+			auto osparams = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (osparams) osparams->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -12883,7 +12883,7 @@ CK_RV SoftHSM::generateGOST
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto osobject = handleManager->getObject(*phPublicKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -12953,7 +12953,7 @@ CK_RV SoftHSM::generateGOST
 		// Store the attributes that are being supplied by the key generation to the object
 		if (rv == CKR_OK)
 		{
-			OSObject* osobject = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto osobject = handleManager->getObject(*phPrivateKey);
 			if (osobject == NULL_PTR || !osobject->isValid()) {
 				rv = CKR_FUNCTION_FAILED;
 			} else if (osobject->startTransaction()) {
@@ -13015,7 +13015,7 @@ CK_RV SoftHSM::generateGOST
 	{
 		if (*phPrivateKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospriv = (OSObject*)handleManager->getObject(*phPrivateKey);
+			auto ospriv = handleManager->getObject(*phPrivateKey);
 			handleManager->destroyObject(*phPrivateKey);
 			if (ospriv) ospriv->destroyObject();
 			*phPrivateKey = CK_INVALID_HANDLE;
@@ -13023,7 +13023,7 @@ CK_RV SoftHSM::generateGOST
 
 		if (*phPublicKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ospub = (OSObject*)handleManager->getObject(*phPublicKey);
+			auto ospub = handleManager->getObject(*phPublicKey);
 			handleManager->destroyObject(*phPublicKey);
 			if (ospub) ospub->destroyObject();
 			*phPublicKey = CK_INVALID_HANDLE;
@@ -13139,7 +13139,7 @@ CK_RV SoftHSM::deriveDH
 	}
 
 	// Get the base key handle
-	OSObject *baseKey = (OSObject *)handleManager->getObject(hBaseKey);
+	auto baseKey = handleManager->getObject(hBaseKey);
 	if (baseKey == NULL || !baseKey->isValid())
 		return CKR_KEY_HANDLE_INVALID;
 
@@ -13223,7 +13223,7 @@ CK_RV SoftHSM::deriveDH
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -13337,7 +13337,7 @@ CK_RV SoftHSM::deriveDH
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ossecret = (OSObject*)handleManager->getObject(*phKey);
+			auto ossecret = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (ossecret) ossecret->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -13471,7 +13471,7 @@ CK_RV SoftHSM::deriveECDH
 	}
 
 	// Get the base key handle
-	OSObject *baseKey = (OSObject *)handleManager->getObject(hBaseKey);
+	auto baseKey = handleManager->getObject(hBaseKey);
 	if (baseKey == NULL || !baseKey->isValid())
 		return CKR_KEY_HANDLE_INVALID;
 
@@ -13557,7 +13557,7 @@ CK_RV SoftHSM::deriveECDH
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -13690,7 +13690,7 @@ CK_RV SoftHSM::deriveECDH
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ossecret = (OSObject*)handleManager->getObject(*phKey);
+			auto ossecret = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (ossecret) ossecret->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -13825,7 +13825,7 @@ CK_RV SoftHSM::deriveEDDSA
 	}
 
 	// Get the base key handle
-	OSObject *baseKey = (OSObject *)handleManager->getObject(hBaseKey);
+	auto baseKey = handleManager->getObject(hBaseKey);
 	if (baseKey == NULL || !baseKey->isValid())
 		return CKR_KEY_HANDLE_INVALID;
 
@@ -13911,7 +13911,7 @@ CK_RV SoftHSM::deriveEDDSA
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -14044,7 +14044,7 @@ CK_RV SoftHSM::deriveEDDSA
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ossecret = (OSObject*)handleManager->getObject(*phKey);
+			auto ossecret = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (ossecret) ossecret->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -14069,7 +14069,8 @@ CK_RV SoftHSM::deriveSymmetric
 {
 	*phKey = CK_INVALID_HANDLE;
 	CK_OBJECT_HANDLE_PTR phOtherKey = CK_INVALID_HANDLE;
-	OSObject *otherKey = NULL_PTR;
+	// Reference to the second key; only set for CKM_CONCATENATE_BASE_AND_KEY
+	decltype(handleManager->getObject(CK_INVALID_HANDLE)) otherKey;
 
 	if (pMechanism->pParameter == NULL_PTR)
 	{
@@ -14207,7 +14208,7 @@ CK_RV SoftHSM::deriveSymmetric
 	// Extract another key
 	if (pMechanism->mechanism == CKM_CONCATENATE_BASE_AND_KEY) {
 		// Check the key handle.
-		otherKey = (OSObject *)handleManager->getObject(*phOtherKey);
+		otherKey = handleManager->getObject(*phOtherKey);
 		if (otherKey == NULL_PTR || !otherKey->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 		if (otherKey->getBooleanValue(CKA_PRIVATE, true)) {
 			bool bOK = token->decrypt(otherKey->getByteStringValue(CKA_VALUE), data);
@@ -14351,7 +14352,7 @@ CK_RV SoftHSM::deriveSymmetric
 	}
 
 	// Check the key handle
-	OSObject *baseKey = (OSObject *)handleManager->getObject(hBaseKey);
+	auto baseKey = handleManager->getObject(hBaseKey);
 	if (baseKey == NULL_PTR || !baseKey->isValid()) return CKR_OBJECT_HANDLE_INVALID;
 
     // Get the data
@@ -14472,7 +14473,7 @@ CK_RV SoftHSM::deriveSymmetric
 	// Store the attributes that are being supplied
 	if (rv == CKR_OK)
 	{
-		OSObject* osobject = (OSObject*)handleManager->getObject(*phKey);
+		auto osobject = handleManager->getObject(*phKey);
 		if (osobject == NULL_PTR || !osobject->isValid()) {
 			rv = CKR_FUNCTION_FAILED;
 		} else if (osobject->startTransaction()) {
@@ -14636,7 +14637,7 @@ CK_RV SoftHSM::deriveSymmetric
 	{
 		if (*phKey != CK_INVALID_HANDLE)
 		{
-			OSObject* ossecret = (OSObject*)handleManager->getObject(*phKey);
+			auto ossecret = handleManager->getObject(*phKey);
 			handleManager->destroyObject(*phKey);
 			if (ossecret) ossecret->destroyObject();
 			*phKey = CK_INVALID_HANDLE;
@@ -15966,7 +15967,7 @@ CK_RV SoftHSM::generateSLHDSA(
     // Store the attributes that are being supplied by the key generation to the
     // object
     if (rv == CKR_OK) {
-      OSObject *osobject = (OSObject *)handleManager->getObject(*phPublicKey);
+      auto osobject = handleManager->getObject(*phPublicKey);
       if (osobject == NULL_PTR || !osobject->isValid()) {
         rv = CKR_FUNCTION_FAILED;
       } else if (osobject->startTransaction()) {
@@ -16052,7 +16053,7 @@ CK_RV SoftHSM::generateSLHDSA(
     // Store the attributes that are being supplied by the key generation to the
     // object
     if (rv == CKR_OK) {
-      OSObject *osobject = (OSObject *)handleManager->getObject(*phPrivateKey);
+      auto osobject = handleManager->getObject(*phPrivateKey);
       if (osobject == NULL_PTR || !osobject->isValid()) {
         rv = CKR_FUNCTION_FAILED;
       } else if (osobject->startTransaction()) {
@@ -16104,7 +16105,7 @@ CK_RV SoftHSM::generateSLHDSA(
   // Remove keys that may have been created already when the function fails.
   if (rv != CKR_OK) {
     if (*phPrivateKey != CK_INVALID_HANDLE) {
-      OSObject *ospriv = (OSObject *)handleManager->getObject(*phPrivateKey);
+      auto ospriv = handleManager->getObject(*phPrivateKey);
       handleManager->destroyObject(*phPrivateKey);
       if (ospriv)
         ospriv->destroyObject();
@@ -16112,7 +16113,7 @@ CK_RV SoftHSM::generateSLHDSA(
     }
 
     if (*phPublicKey != CK_INVALID_HANDLE) {
-      OSObject *ospub = (OSObject *)handleManager->getObject(*phPublicKey);
+      auto ospub = handleManager->getObject(*phPublicKey);
       handleManager->destroyObject(*phPublicKey);
       if (ospub)
         ospub->destroyObject();

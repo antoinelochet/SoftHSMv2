@@ -46,6 +46,8 @@ namespace {
 class TestOSObject : public OSObject
 {
 public:
+	TestOSObject(bool* deleted = NULL) : deleted(deleted) {}
+	~TestOSObject() { if (deleted != NULL) *deleted = true; }
 	bool attributeExists(CK_ATTRIBUTE_TYPE) { return false; }
 	OSAttribute getAttribute(CK_ATTRIBUTE_TYPE) { abort(); }
 	bool getBooleanValue(CK_ATTRIBUTE_TYPE, bool v) { return v; }
@@ -59,6 +61,9 @@ public:
 	bool commitTransaction() { return true; }
 	bool abortTransaction() { return true; }
 	bool destroyObject() { return true; }
+
+private:
+	bool* deleted;
 };
 
 } // anonymous namespace
@@ -199,4 +204,46 @@ void HandleManagerTests::testHandleManager()
 	object3->release();
 	object4->release();
 	object5->release();
+}
+
+// A reference returned by getObject() must keep a session object alive when
+// the owning session is closed and the creator drops its reference meanwhile.
+void HandleManagerTests::testGetObjectKeepsObjectAlive()
+{
+	CK_SLOT_ID slotID = 1234;
+	CK_SESSION_HANDLE hSession;
+	Session* session = reinterpret_cast<Session*>(&hSession);
+
+	bool deleted = false;
+	OSObject* object = new TestOSObject(&deleted);
+
+	hSession = handleManager->addSession(slotID, session);
+	CPPUNIT_ASSERT(hSession != CK_INVALID_HANDLE);
+	// Keep a second session open so that closing hSession does not cascade into allSessionsClosed
+	CK_SESSION_HANDLE hOther;
+	Session* other = reinterpret_cast<Session*>(&hOther);
+	hOther = handleManager->addSession(slotID, other);
+
+	CK_OBJECT_HANDLE hObject = handleManager->addSessionObject(slotID, hSession, false, object);
+	CPPUNIT_ASSERT(hObject != CK_INVALID_HANDLE);
+
+	{
+		auto ref = handleManager->getObject(hObject);
+		CPPUNIT_ASSERT(object == ref);
+
+		// What a concurrent C_CloseSession does: the handle manager and then the
+		// session object store drop their references.
+		handleManager->sessionClosed(hSession);
+		object->release();
+		CPPUNIT_ASSERT(NULL == handleManager->getObject(hObject));
+
+		// Still usable, not freed yet
+		CPPUNIT_ASSERT(!deleted);
+		CPPUNIT_ASSERT(ref->isValid());
+	}
+
+	// The last reference is gone
+	CPPUNIT_ASSERT(deleted);
+
+	handleManager->sessionClosed(hOther);
 }

@@ -156,14 +156,18 @@ CK_OBJECT_HANDLE HandleManager::addTokenObject(CK_SLOT_ID slotID, bool isPrivate
 	return (CK_OBJECT_HANDLE)handleCounter;
 }
 
-OSObject *HandleManager::getObject(const CK_OBJECT_HANDLE hObject)
+HandleManager::ObjectRef HandleManager::getObject(const CK_OBJECT_HANDLE hObject)
 {
 	MutexLocker lock(handlesMutex);
 
 	auto it = handles.find(hObject);
 	if (it == handles.end() || CKH_OBJECT != it->second.kind )
-		return nullptr;
-	return it->second.object;
+		return ObjectRef();
+
+	// Acquire while holding handlesMutex: closing the session erases the handle
+	// and drops the handle manager's reference under this same mutex.
+	it->second.object->acquire();
+	return ObjectRef(it->second.object);
 }
 
 CK_OBJECT_HANDLE HandleManager::getObjectHandle(OSObject *object)

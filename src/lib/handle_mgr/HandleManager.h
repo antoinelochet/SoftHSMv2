@@ -46,6 +46,53 @@
 
 class HandleManager
 {
+private:
+    // Owning reference to an OSObject, released on destruction. getObject()
+    // returns one so that the object cannot be deleted by a concurrent session
+    // close or object destroy while the caller is still using it.
+    // Callers are expected to hold it with auto and keep it in scope.
+    class ObjectRef
+    {
+    public:
+        ObjectRef() : object(nullptr) {}
+
+        // Takes over a reference that has already been acquired for the caller.
+        explicit ObjectRef(OSObject *obj) : object(obj) {}
+
+        ObjectRef(ObjectRef &&other) noexcept : object(other.object) { other.object = nullptr; }
+
+        ObjectRef &operator=(ObjectRef &&other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                object = other.object;
+                other.object = nullptr;
+            }
+            return *this;
+        }
+
+        ObjectRef(const ObjectRef &) = delete;
+        ObjectRef &operator=(const ObjectRef &) = delete;
+
+        ~ObjectRef() { reset(); }
+
+        operator OSObject *() const { return object; }
+        OSObject *operator->() const { return object; }
+
+    private:
+        void reset()
+        {
+            if (object != nullptr)
+            {
+                object->release();
+                object = nullptr;
+            }
+        }
+
+        OSObject *object;
+    };
+
 public:
     HandleManager();
 
@@ -62,8 +109,11 @@ public:
     // slotID mathces.
     CK_OBJECT_HANDLE addTokenObject(CK_SLOT_ID slotID, bool isPrivate, OSObject *object);
 
-    // Get the object pointer associated with the given object handle.
-    OSObject *getObject(const CK_OBJECT_HANDLE hObject);
+    // Get a reference to the object associated with the given object handle.
+    // The object is kept alive until the returned reference goes out of scope,
+    // even if its session is closed or it is destroyed in the meantime.
+    // The reference is empty when the handle is not found.
+    ObjectRef getObject(const CK_OBJECT_HANDLE hObject);
 
     // Get the object handle for the object pointer that has been previously registered.
     // When the object is not found CK_INVALID_HANDLE is returned.

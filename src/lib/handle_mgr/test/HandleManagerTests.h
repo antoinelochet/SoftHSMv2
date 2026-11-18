@@ -41,10 +41,12 @@ class HandleManagerTests : public CppUnit::TestFixture
 {
 	CPPUNIT_TEST_SUITE(HandleManagerTests);
 	CPPUNIT_TEST(testHandleManager);
+	CPPUNIT_TEST(testGetObjectKeepsObjectAlive);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
 	void testHandleManager();
+	void testGetObjectKeepsObjectAlive();
 
 	void setUp();
 	void tearDown();
