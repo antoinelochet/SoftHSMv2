@@ -1675,7 +1675,7 @@ CK_RV SoftHSM::C_InitPIN(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin, CK_UL
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// The SO must be logged in
@@ -1707,7 +1707,7 @@ CK_RV SoftHSM::C_SetPIN(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pOldPin, CK_
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check the new PINs
@@ -1750,13 +1750,14 @@ CK_RV SoftHSM::C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApp
 
 	Slot* slot = slotManager->getSlot(slotID);
 
-	CK_RV rv = sessionManager->openSession(slot, flags, pApplication, notify, phSession);
+	SessionRef session;
+	CK_RV rv = sessionManager->openSession(slot, flags, pApplication, notify, phSession, &session);
 	if (rv != CKR_OK)
 		return rv;
 
-	// Get a pointer to the session object and store it in the handle manager.
-	Session* session = sessionManager->getSession(*phSession);
-	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	// Store the new session in the handle manager. The reference from openSession() is
+	// used: looking it up again by handle could return another session that reused the
+	// handle after a concurrent close.
 	*phSession = handleManager->addSession(slotID,session);
 
 	return CKR_OK;
@@ -1773,7 +1774,7 @@ CK_RV SoftHSM::C_CloseSession(CK_SESSION_HANDLE hSession)
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Tell the handle manager the session has been closed.
@@ -1784,7 +1785,7 @@ CK_RV SoftHSM::C_CloseSession(CK_SESSION_HANDLE hSession)
 	sessionObjectStore->sessionClosed(hSession);
 
 	// Tell the session manager the session has been closed.
-	return sessionManager->closeSession(session->getHandle());
+	return sessionManager->closeSession(session);
 }
 
 // Close all open sessions
@@ -1829,7 +1830,7 @@ CK_RV SoftHSM::C_GetSessionInfo(CK_SESSION_HANDLE hSession, CK_SESSION_INFO_PTR 
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return session->getInfo(pInfo);
@@ -1846,7 +1847,7 @@ CK_RV SoftHSM::C_GetOperationState(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pOp
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -1863,7 +1864,7 @@ CK_RV SoftHSM::C_SetOperationState(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pOp
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -1882,7 +1883,7 @@ CK_RV SoftHSM::C_Login(CK_SESSION_HANDLE hSession, CK_USER_TYPE userType, CK_UTF
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the PIN
@@ -1932,7 +1933,7 @@ CK_RV SoftHSM::C_Logout(CK_SESSION_HANDLE hSession)
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -1976,7 +1977,7 @@ CK_RV SoftHSM::C_CopyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject
 	*phNewObject = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the slot
@@ -2043,15 +2044,20 @@ CK_RV SoftHSM::C_CopyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject
 		return rv;
 	}
 
-	// Create the object in session or on the token
+	// Create the object in session or on the token. A session object comes with a
+	// reference for this function that is dropped on every return path, so that a
+	// concurrent logout or session close cannot free it while it is being filled in.
 	OSObject *newobject = NULL_PTR;
+	OSObjectRef newobjectRef;
 	if (isOnToken)
 	{
 		newobject = (OSObject*) token->createObject();
 	}
 	else
 	{
-		newobject = sessionObjectStore->createObject(slot->getSlotID(), hSession, isPrivate != CK_FALSE);
+		SessionObject* sessionObject = sessionObjectStore->createObject(slot->getSlotID(), hSession, isPrivate != CK_FALSE);
+		newobject = sessionObject;
+		newobjectRef = OSObjectRef::adopt(sessionObject);
 	}
 	if (newobject == NULL) return CKR_GENERAL_ERROR;
 
@@ -2161,7 +2167,7 @@ CK_RV SoftHSM::C_DestroyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObj
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -2214,7 +2220,7 @@ CK_RV SoftHSM::C_GetObjectSize(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObj
 	if (pulSize == NULL) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -2243,7 +2249,7 @@ CK_RV SoftHSM::C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE 
 	if (pTemplate == NULL) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -2295,7 +2301,7 @@ CK_RV SoftHSM::C_SetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE 
 	if (pTemplate == NULL) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -2350,7 +2356,7 @@ CK_RV SoftHSM::C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pT
 	if (pTemplate == NULL_PTR && ulCount != 0) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the slot
@@ -2525,7 +2531,7 @@ CK_RV SoftHSM::C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR ph
 	if (pulObjectCount == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -2555,7 +2561,7 @@ CK_RV SoftHSM::C_FindObjectsFinal(CK_SESSION_HANDLE hSession)
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -2602,7 +2608,7 @@ CK_RV SoftHSM::SymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -2896,7 +2902,7 @@ CK_RV SoftHSM::AsymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -3194,7 +3200,7 @@ CK_RV SoftHSM::C_Encrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	if ((pData == NULL_PTR) || (pulEncryptedDataLen == NULL_PTR))
@@ -3305,7 +3311,7 @@ CK_RV SoftHSM::C_EncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	if ((pData == NULL_PTR) || (pulEncryptedDataLen == NULL_PTR))
@@ -3415,7 +3421,7 @@ CK_RV SoftHSM::C_EncryptFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncrypted
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Github issue #469, check NULL_PTR on pulEncryptedDataLen
@@ -3447,7 +3453,7 @@ CK_RV SoftHSM::SymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -3742,7 +3748,7 @@ CK_RV SoftHSM::AsymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the token
@@ -4031,7 +4037,7 @@ CK_RV SoftHSM::C_Decrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedData,
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	if ((pEncryptedData == NULL_PTR) || (pulDataLen == NULL_PTR))
@@ -4145,7 +4151,7 @@ CK_RV SoftHSM::C_DecryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncrypte
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	if ((pEncryptedData == NULL_PTR) || (pDataLen == NULL_PTR))
@@ -4254,7 +4260,7 @@ CK_RV SoftHSM::C_DecryptFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Github issue #469, check NULL_PTR on pDataLen
@@ -4286,7 +4292,7 @@ CK_RV SoftHSM::C_DigestInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -4368,7 +4374,7 @@ CK_RV SoftHSM::C_Digest(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 	if (pData == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -4435,7 +4441,7 @@ CK_RV SoftHSM::C_DigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 	if (pPart == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -4465,7 +4471,7 @@ CK_RV SoftHSM::C_DigestKey(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject)
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -4547,7 +4553,7 @@ CK_RV SoftHSM::C_DigestFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDigest, CK
 	if (pulDigestLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -4634,7 +4640,7 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -4893,7 +4899,7 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -5962,7 +5968,7 @@ CK_RV SoftHSM::C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ul
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	if (pulSignatureLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -6052,7 +6058,7 @@ CK_RV SoftHSM::C_SignUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_UL
 	if (pPart == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -6182,7 +6188,7 @@ CK_RV SoftHSM::C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature, C
 	if (pulSignatureLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -6208,7 +6214,7 @@ CK_RV SoftHSM::C_SignRecoverInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR /*
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -6228,7 +6234,7 @@ CK_RV SoftHSM::C_SignRecover(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pData*/, 
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -6247,7 +6253,7 @@ CK_RV SoftHSM::MacVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -6437,7 +6443,7 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	if (pMechanism == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -7336,7 +7342,7 @@ CK_RV SoftHSM::C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// CKM_AES_GMAC accepts empty data (empty AAD)
@@ -7422,7 +7428,7 @@ CK_RV SoftHSM::C_VerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 	if (pPart == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -7522,7 +7528,7 @@ CK_RV SoftHSM::C_VerifyFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature,
 	if (pSignature == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we are doing the correct operation
@@ -7548,7 +7554,7 @@ CK_RV SoftHSM::C_VerifyRecoverInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR 
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check if we have another operation
@@ -7568,7 +7574,7 @@ CK_RV SoftHSM::C_VerifyRecover(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pSignat
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -7585,7 +7591,7 @@ CK_RV SoftHSM::C_DigestEncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*p
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -7602,7 +7608,7 @@ CK_RV SoftHSM::C_DecryptDigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*p
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -7619,7 +7625,7 @@ CK_RV SoftHSM::C_SignEncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*pPa
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -7636,7 +7642,7 @@ CK_RV SoftHSM::C_DecryptVerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR /*p
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_SUPPORTED;
@@ -7657,7 +7663,7 @@ CK_RV SoftHSM::C_GenerateKey(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 	if (phKey == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check the mechanism, only accept DSA and DH parameters
@@ -7817,7 +7823,7 @@ CK_RV SoftHSM::C_GenerateKeyPair
 	if (phPrivateKey == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check the mechanism, only accept RSA, DSA, EC and DH key pair generation.
@@ -8464,7 +8470,7 @@ CK_RV SoftHSM::C_WrapKey
 	if (pulWrappedKeyLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	CK_RV rv;
@@ -9156,7 +9162,7 @@ CK_RV SoftHSM::C_UnwrapKey
 	if (hKey == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	CK_RV rv;
@@ -9539,7 +9545,7 @@ CK_RV SoftHSM::C_DeriveKey
 	if (phKey == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Check the mechanism, only accept DH and ECDH derive
@@ -9724,7 +9730,7 @@ CK_RV SoftHSM::C_SeedRandom(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSeed, CK_UL
 	if (pSeed == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the RNG
@@ -9751,7 +9757,7 @@ CK_RV SoftHSM::C_GenerateRandom(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pRandomD
 	if (pRandomData == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the RNG
@@ -9782,7 +9788,7 @@ CK_RV SoftHSM::C_GetFunctionStatus(CK_SESSION_HANDLE hSession)
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_PARALLEL;
@@ -9799,7 +9805,7 @@ CK_RV SoftHSM::C_CancelFunction(CK_SESSION_HANDLE hSession)
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	return CKR_FUNCTION_NOT_PARALLEL;
@@ -9849,7 +9855,7 @@ CK_RV SoftHSM::C_EncapsulateKey
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	CK_RV rv;
@@ -10174,7 +10180,7 @@ CK_RV SoftHSM::C_DecapsulateKey
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	CK_RV rv;
@@ -10475,7 +10481,7 @@ CK_RV SoftHSM::generateGeneric
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -10647,7 +10653,7 @@ CK_RV SoftHSM::generateAES
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -10840,7 +10846,7 @@ CK_RV SoftHSM::generateDES
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -11007,7 +11013,7 @@ CK_RV SoftHSM::generateDES2
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -11174,7 +11180,7 @@ CK_RV SoftHSM::generateDES3
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -11348,7 +11354,7 @@ CK_RV SoftHSM::generateRSA
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -11634,7 +11640,7 @@ CK_RV SoftHSM::generateDSA
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -11892,7 +11898,7 @@ CK_RV SoftHSM::generateDSAParameters
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -12072,7 +12078,7 @@ CK_RV SoftHSM::generateEC
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -12318,7 +12324,7 @@ CK_RV SoftHSM::generateED
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -12804,7 +12810,7 @@ CK_RV SoftHSM::generateMLDSA
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -12884,7 +12890,7 @@ CK_RV SoftHSM::generateMLKEM
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -12963,7 +12969,7 @@ CK_RV SoftHSM::generateDH
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -13232,7 +13238,7 @@ CK_RV SoftHSM::generateDHParameters
 	*phKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -13392,7 +13398,7 @@ CK_RV SoftHSM::generateGOST
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -13654,7 +13660,7 @@ CK_RV SoftHSM::deriveDH
 	if (pMechanism->ulParameterLen == 0) return CKR_MECHANISM_PARAM_INVALID;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -14013,7 +14019,7 @@ CK_RV SoftHSM::deriveECDH
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -14437,7 +14443,7 @@ CK_RV SoftHSM::deriveEDDSA
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -14935,7 +14941,7 @@ CK_RV SoftHSM::deriveSymmetric
 	}
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
@@ -15489,7 +15495,7 @@ CK_RV SoftHSM::CreateObject(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTempla
 	if (phObject == NULL_PTR) return CKR_ARGUMENTS_BAD;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
 
 	// Get the slot
@@ -15567,15 +15573,20 @@ CK_RV SoftHSM::CreateObject(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTempla
 	if (rv != CKR_OK)
 		return rv;
 
-	// Create the object in session or on the token
+	// Create the object in session or on the token. A session object comes with a
+	// reference for this function that is dropped on every return path, so that a
+	// concurrent logout or session close cannot free it while it is being filled in.
 	OSObject *object = NULL_PTR;
+	OSObjectRef objectRef;
 	if (isOnToken)
 	{
 		object = (OSObject*) token->createObject();
 	}
 	else
 	{
-		object = sessionObjectStore->createObject(slot->getSlotID(), hSession, isPrivate != CK_FALSE);
+		SessionObject* sessionObject = sessionObjectStore->createObject(slot->getSlotID(), hSession, isPrivate != CK_FALSE);
+		object = sessionObject;
+		objectRef = OSObjectRef::adopt(sessionObject);
 	}
 
 	if (object == NULL || !p11object->init(object))
@@ -16646,7 +16657,7 @@ CK_RV SoftHSM::generateSLHDSA
 	*phPrivateKey = CK_INVALID_HANDLE;
 
 	// Get the session
-	Session* session = (Session*)handleManager->getSession(hSession);
+	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL)
 		return CKR_SESSION_HANDLE_INVALID;
 
