@@ -1885,6 +1885,7 @@ CK_RV SoftHSM::C_Login(CK_SESSION_HANDLE hSession, CK_USER_TYPE userType, CK_UTF
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Get the PIN
 	if (pPin == NULL_PTR) return CKR_ARGUMENTS_BAD;
@@ -2358,6 +2359,7 @@ CK_RV SoftHSM::C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pT
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Get the slot
 	Slot* slot = session->getSlot();
@@ -2533,6 +2535,7 @@ CK_RV SoftHSM::C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR ph
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_FIND) return CKR_OPERATION_NOT_INITIALIZED;
@@ -2563,6 +2566,7 @@ CK_RV SoftHSM::C_FindObjectsFinal(CK_SESSION_HANDLE hSession)
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_FIND) return CKR_OPERATION_NOT_INITIALIZED;
@@ -2610,6 +2614,7 @@ CK_RV SoftHSM::SymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -2904,6 +2909,7 @@ CK_RV SoftHSM::AsymEncryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -3202,6 +3208,7 @@ CK_RV SoftHSM::C_Encrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	if ((pData == NULL_PTR) || (pulEncryptedDataLen == NULL_PTR))
 	{
@@ -3313,6 +3320,7 @@ CK_RV SoftHSM::C_EncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	if ((pData == NULL_PTR) || (pulEncryptedDataLen == NULL_PTR))
 	{
@@ -3423,6 +3431,7 @@ CK_RV SoftHSM::C_EncryptFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncrypted
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Github issue #469, check NULL_PTR on pulEncryptedDataLen
 	if (pulEncryptedDataLen == NULL)
@@ -3455,6 +3464,7 @@ CK_RV SoftHSM::SymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Get the token
 	Token* token = session->getToken();
@@ -3750,6 +3760,7 @@ CK_RV SoftHSM::AsymDecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMec
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Get the token
 	Token* token = session->getToken();
@@ -4039,6 +4050,7 @@ CK_RV SoftHSM::C_Decrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedData,
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	if ((pEncryptedData == NULL_PTR) || (pulDataLen == NULL_PTR))
 	{
@@ -4153,6 +4165,7 @@ CK_RV SoftHSM::C_DecryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncrypte
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	if ((pEncryptedData == NULL_PTR) || (pDataLen == NULL_PTR))
 	{
@@ -4262,6 +4275,7 @@ CK_RV SoftHSM::C_DecryptFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Github issue #469, check NULL_PTR on pDataLen
 	if (pDataLen == NULL)
@@ -4294,6 +4308,7 @@ CK_RV SoftHSM::C_DigestInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -4376,6 +4391,7 @@ CK_RV SoftHSM::C_Digest(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_DIGEST) return CKR_OPERATION_NOT_INITIALIZED;
@@ -4443,6 +4459,7 @@ CK_RV SoftHSM::C_DigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_DIGEST) return CKR_OPERATION_NOT_INITIALIZED;
@@ -4473,6 +4490,7 @@ CK_RV SoftHSM::C_DigestKey(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject)
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_DIGEST) return CKR_OPERATION_NOT_INITIALIZED;
@@ -4555,6 +4573,7 @@ CK_RV SoftHSM::C_DigestFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDigest, CK
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_DIGEST) return CKR_OPERATION_NOT_INITIALIZED;
@@ -4642,6 +4661,7 @@ CK_RV SoftHSM::MacSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechani
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -4901,6 +4921,7 @@ CK_RV SoftHSM::AsymSignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechan
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -5970,6 +5991,7 @@ CK_RV SoftHSM::C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ul
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	if (pulSignatureLen == NULL_PTR) return CKR_ARGUMENTS_BAD;
 	// CKM_AES_GMAC accepts empty data (empty AAD)
@@ -6060,6 +6082,7 @@ CK_RV SoftHSM::C_SignUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_UL
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_SIGN)
@@ -6190,6 +6213,7 @@ CK_RV SoftHSM::C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature, C
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_SIGN || !session->getAllowMultiPartOp())
@@ -6216,6 +6240,7 @@ CK_RV SoftHSM::C_SignRecoverInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR /*
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -6255,6 +6280,7 @@ CK_RV SoftHSM::MacVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMecha
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -6445,6 +6471,7 @@ CK_RV SoftHSM::AsymVerifyInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMech
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
@@ -7344,6 +7371,7 @@ CK_RV SoftHSM::C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG 
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// CKM_AES_GMAC accepts empty data (empty AAD)
 	if (pData == NULL_PTR && (ulDataLen != 0 || session->getSymmetricCryptoOp() == NULL))
@@ -7430,6 +7458,7 @@ CK_RV SoftHSM::C_VerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_VERIFY)
@@ -7530,6 +7559,7 @@ CK_RV SoftHSM::C_VerifyFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature,
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we are doing the correct operation
 	if (session->getOpType() != SESSION_OP_VERIFY || !session->getAllowMultiPartOp())
@@ -7556,6 +7586,7 @@ CK_RV SoftHSM::C_VerifyRecoverInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR 
 	// Get the session
 	SessionRef session = handleManager->getSession(hSession);
 	if (session == NULL) return CKR_SESSION_HANDLE_INVALID;
+	MutexLocker opLock(session->getOpMutex());
 
 	// Check if we have another operation
 	if (session->getOpType() != SESSION_OP_NONE) return CKR_OPERATION_ACTIVE;
